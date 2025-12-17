@@ -39,6 +39,15 @@ interface DashboardClientProps {
   providers: LoanProvider[];
   initialLoanHistory: LoanDetails[];
   taxConfigs: Tax[];
+    selectedItem?: {
+        id: string;
+        name: string;
+        price: number;
+        merchantName: string;
+        categoryName: string;
+        quantity: number;
+        totalAmount: number;
+    } | null;
 }
 
 interface EligibilityState {
@@ -51,7 +60,7 @@ interface AgreementState {
     hasAgreed?: boolean;
 }
 
-export function DashboardClient({ providers, initialLoanHistory, taxConfigs }: DashboardClientProps) {
+export function DashboardClient({ providers, initialLoanHistory, taxConfigs, selectedItem }: DashboardClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const providerIdFromUrl = searchParams.get('providerId');
@@ -251,9 +260,26 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs }: D
         params.set('providerId', selectedProviderId);
         params.set('product', product.id);
         const productLimit = eligibility.limits[product.id] ?? 0;
-        
-        params.set('min', String(product.minLoan ?? 0));
-        params.set('max', String(productLimit));
+
+        if (selectedItem) {
+            const requiredAmount = selectedItem.totalAmount;
+            if (requiredAmount > productLimit) {
+                toast({
+                    title: 'Insufficient limit',
+                    description: `This product limit (${formatCurrency(productLimit)}) is below the item total (${formatCurrency(requiredAmount)}).`,
+                    variant: 'destructive',
+                });
+                return;
+            }
+            params.set('itemId', selectedItem.id);
+            params.set('qty', String(selectedItem.quantity));
+            // BNPL: item total is fixed; borrower chooses the product/terms, not the amount.
+            params.set('min', String(requiredAmount));
+            params.set('max', String(requiredAmount));
+        } else {
+            params.set('min', String(product.minLoan ?? 0));
+            params.set('max', String(productLimit));
+        }
         router.push(`/apply?${params.toString()}`);
     }
   
@@ -411,6 +437,32 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs }: D
                         </CardContent>
                     </Card>
                   )}
+
+                                    {selectedItem && (
+                                        <Card className="my-4">
+                                            <CardHeader>
+                                                <CardTitle className="text-base">Selected item</CardTitle>
+                                                <CardDescription>
+                                                    {selectedItem.merchantName} • {selectedItem.categoryName}
+                                                </CardDescription>
+                                            </CardHeader>
+                                            <CardContent className="flex flex-col gap-2">
+                                                <div className="flex items-center justify-between">
+                                                    <div className="font-medium">{selectedItem.name}</div>
+                                                    <div className="text-sm text-muted-foreground">{selectedItem.quantity}×</div>
+                                                </div>
+                                                <div className="flex items-center justify-between">
+                                                    <div className="text-sm text-muted-foreground">Total</div>
+                                                    <div className="font-semibold">{formatCurrency(selectedItem.totalAmount)}</div>
+                                                </div>
+                                                <div className="pt-2">
+                                                    <Button asChild variant="outline">
+                                                        <Link href={`/shop?${borrowerId ? `borrowerId=${encodeURIComponent(borrowerId)}` : ''}`}>Change item</Link>
+                                                    </Button>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    )}
                   
                   <div className="flex justify-end mt-4">
                     <Link

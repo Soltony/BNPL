@@ -27,10 +27,14 @@ model User {
   sessions        Session[]
   loanProviderId  String?
   loanProvider    LoanProvider?   @relation(fields: [loanProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  merchantId      String?
+  merchant        Merchant?       @relation(fields: [merchantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   createdChanges  PendingChange[] @relation("CreatedBy")
   approvedChanges PendingChange[] @relation("ApprovedBy")
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
+
+  @@index([merchantId])
 }
 
 model Role {
@@ -159,8 +163,88 @@ model Loan {
   payments          Payment[]
   journalEntries    JournalEntry[]
   pendingPayments   PendingPayment[]
+  order             Order?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
+}
+
+// --------------------------------------
+// BNPL (MERCHANTS, ITEMS, ORDERS)
+// --------------------------------------
+
+model Merchant {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  status    String  @default("ACTIVE") // ACTIVE, INACTIVE
+  users     User[]
+  items     Item[]
+  orders    Order[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductCategory {
+  id        String  @id @default(cuid())
+  name      String  @unique
+  status    String  @default("ACTIVE") // ACTIVE, INACTIVE
+  items     Item[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Item {
+  id            String          @id @default(cuid())
+  merchantId    String
+  merchant      Merchant        @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryId    String
+  category      ProductCategory @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  name          String
+  description   String?         @db.Text
+  price         Float
+  currency      String          @default("ETB")
+  status        String          @default("ACTIVE") // ACTIVE, INACTIVE
+  stockQuantity Int?
+  orderItems    OrderItem[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([merchantId])
+  @@index([categoryId])
+}
+
+model Order {
+  id                String         @id @default(cuid())
+  borrowerId        String
+  borrower          Borrower       @relation(fields: [borrowerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  merchantId        String
+  merchant          Merchant       @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status            String         @default("PENDING_MERCHANT_CONFIRMATION") // PENDING_MERCHANT_CONFIRMATION, ON_DELIVERY, DELIVERED, CANCELLED
+  totalAmount       Float
+  loanApplicationId String?        @unique
+  loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  loanId            String?        @unique
+  loan              Loan?          @relation(fields: [loanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  items             OrderItem[]
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([borrowerId])
+  @@index([merchantId])
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemId    String
+  item      Item   @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  quantity  Int    @default(1)
+  unitPrice Float
+  lineTotal Float
+
+  @@unique([orderId, itemId])
+  @@index([orderId])
+  @@index([itemId])
 }
 
 model Payment {
@@ -179,6 +263,7 @@ model Borrower {
   status                  String                    @default("Active") // Active, NPL
   provisionedData         ProvisionedData[]
   loans                   Loan[]
+  orders                  Order[]
   agreements              BorrowerAgreement[]
   loanApplications        LoanApplication[]
   pendingPayments         PendingPayment[]
@@ -200,6 +285,7 @@ model LoanApplication {
   status            String             @default("PENDING_DOCUMENTS") // PENDING_DOCUMENTS, PENDING_REVIEW, NEEDS_REVISION, APPROVED, DISBURSED
   rejectionReason   String?            @db.Text
   loan              Loan?
+  order             Order?
   uploadedDocuments UploadedDocument[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt

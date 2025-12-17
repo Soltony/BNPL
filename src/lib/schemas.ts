@@ -68,6 +68,17 @@ export const loanCreationSchema = z.object({
     dueDate: z.string().datetime(),
 });
 
+export const bnplCheckoutSchema = z.object({
+  borrowerId: z.string(),
+  productId: z.string(),
+  itemId: z.string(),
+  quantity: z.number().int().min(1).default(1),
+});
+
+export const bnplConfirmDeliveredSchema = z.object({
+  borrowerId: z.string(),
+});
+
 export const requiredDocumentSchema = z.object({
   productId: z.string(),
   name: z.string().min(1, 'Name is required'),

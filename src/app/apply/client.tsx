@@ -22,6 +22,10 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
 
     const productId = searchParams.get('product');
     const borrowerId = searchParams.get('borrowerId');
+    const itemId = searchParams.get('itemId');
+    const qtyParam = searchParams.get('qty');
+    const quantity = qtyParam ? Math.max(1, Number(qtyParam)) : 1;
+    const isBnpl = !!itemId;
 
     const selectedProduct = useMemo(() => {
         if (!provider || !productId) return null;
@@ -36,6 +40,7 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
     const [showAccountModal, setShowAccountModal] = useState(false);
 
     useEffect(() => {
+        if (isBnpl) return;
         // When the super-app provides a borrowerId (phone), check for an active associated account.
         // If none exists, open a blocking modal to force the user to select one.
         const checkActive = async () => {
@@ -69,7 +74,7 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
         };
 
         checkActive();
-    }, [borrowerId]);
+    }, [borrowerId, isBnpl]);
 
     const eligibilityResult = useMemo(() => {
         const min = searchParams.get('min');
@@ -87,6 +92,33 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
         if (!selectedProduct || !borrowerId) {
             toast({ title: 'Error', description: 'Missing required information.', variant: 'destructive'});
             return;
+        }
+
+        if (isBnpl) {
+            try {
+                const response = await fetch('/api/bnpl/checkout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        borrowerId,
+                        productId: selectedProduct.id,
+                        itemId,
+                        quantity,
+                    }),
+                });
+
+                const data = await response.json().catch(() => null);
+                if (!response.ok) {
+                    throw new Error(data?.error || 'Failed to create BNPL order.');
+                }
+
+                toast({ title: 'Order created', description: 'Waiting for merchant confirmation.' });
+                router.push(`/bnpl/orders?borrowerId=${encodeURIComponent(borrowerId)}`);
+                return;
+            } catch (error: any) {
+                toast({ title: 'Error', description: error.message, variant: 'destructive' });
+                return;
+            }
         }
 
         try {
@@ -140,7 +172,7 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
                         toast({ title: 'Disbursement sent', description: 'External disbursement request was sent.' });
                     }
                 } else {
-                    toast({ title: 'No account selected', description: 'No disbursement account was selected; external transfer was not attempted.', variant: 'warning' });
+                    toast({ title: 'No account selected', description: 'No disbursement account was selected; external transfer was not attempted.', variant: 'default' });
                 }
             } catch (err: any) {
                 toast({ title: 'Disbursement error', description: String(err?.message ?? err), variant: 'destructive' });
@@ -196,7 +228,7 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
                 <div className="container py-8 md:py-12">
                     {/* If borrowerId is provided by the super-app, automatically show account selector */}
                     {/* Show selected account summary when available */}
-                    {selectedAccount ? (
+                    {!isBnpl && selectedAccount ? (
                         <div className="mb-6">
                             <div className="text-sm">Selected account for disbursement:</div>
                             <div className="font-mono">{selectedAccount.accountNumber} — {selectedAccount.customerName}</div>
@@ -206,7 +238,7 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
                     {renderStep()}
 
                     {/* Blocking modal: forces account selection when there is no active account */}
-                    <Dialog open={showAccountModal} onOpenChange={(open) => {
+                    <Dialog open={!isBnpl && showAccountModal} onOpenChange={(open) => {
                         // prevent closing unless an account is selected
                         if (!open && !selectedAccount) return;
                         setShowAccountModal(open);

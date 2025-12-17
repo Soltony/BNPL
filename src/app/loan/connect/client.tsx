@@ -31,7 +31,7 @@ export function ConnectClient({ superAppToken }: { superAppToken: string }) {
                     throw new Error('Borrower ID not returned from session creation.');
                 }
 
-                router.push(`/loan?borrowerId=${borrowerId}`);
+                router.push(`/shop?borrowerId=${borrowerId}`);
 
             } catch (err: any) {
                 setError(err.message);

@@ -1,9 +1,12 @@
 
+import Link from 'next/link';
 import { DashboardClient } from '@/components/dashboard/dashboard-client';
 import type { LoanDetails, LoanProvider, FeeRule, PenaltyRule, Tax } from '@/lib/types';
 import { Suspense } from 'react';
 import { Loader2 } from 'lucide-react';
 import prisma from '@/lib/prisma';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 // Helper function to safely parse JSON from DB
 const safeJsonParse = (jsonString: string | null | undefined, defaultValue: any) => {
@@ -127,15 +130,99 @@ async function getTaxConfigs(): Promise<Tax[]> {
     return await prisma.tax.findMany();
 }
 
+async function getSelectedItem(itemId?: string, qty?: number) {
+    if (!itemId) return null;
+    const item = await prisma.item.findUnique({
+        where: { id: itemId },
+        include: { merchant: true, category: true },
+    });
+    if (!item || item.status !== 'ACTIVE') return null;
+    const quantity = qty && qty > 0 ? qty : 1;
+    return {
+        id: item.id,
+        name: item.name,
+        price: item.price,
+        merchantName: item.merchant.name,
+        categoryName: item.category.name,
+        quantity,
+        totalAmount: item.price * quantity,
+    };
+}
+
+const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + ' ETB';
+
 
 export default async function LoanPage({ searchParams }: { searchParams: any }) {
     const params = await searchParams;
     const borrowerId = params?.borrowerId as string;
+    const itemId = params?.itemId as string | undefined;
+    const qty = params?.qty ? Number(params.qty) : undefined;
+
+    // Borrower must pick an item before we show loan products (DashboardClient).
+    if (!itemId) {
+        const items = await prisma.item.findMany({
+            where: {
+                status: 'ACTIVE',
+                merchant: { status: 'ACTIVE' },
+                category: { status: 'ACTIVE' },
+            },
+            include: {
+                merchant: true,
+                category: true,
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        return (
+            <div className="container py-8 md:py-12 space-y-6">
+                <div>
+                    <h1 className="text-2xl font-semibold">Shop</h1>
+                    <p className="text-muted-foreground">Select an item, then choose a loan product to pay later.</p>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                    {items.map((item) => {
+                        const href = borrowerId
+                            ? `/loan?borrowerId=${encodeURIComponent(borrowerId)}&itemId=${encodeURIComponent(item.id)}&qty=1`
+                            : `/loan?itemId=${encodeURIComponent(item.id)}&qty=1`;
+
+                        return (
+                            <Card key={item.id}>
+                                <CardHeader>
+                                    <CardTitle className="text-base">{item.name}</CardTitle>
+                                    <CardDescription>
+                                        {item.merchant.name} • {item.category.name}
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="flex items-center justify-between gap-4">
+                                    <div className="font-medium">{formatCurrency(item.price)}</div>
+                                    <Button asChild>
+                                        <Link href={href}>Select</Link>
+                                    </Button>
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
+                </div>
+
+                {items.length === 0 ? (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>No items yet</CardTitle>
+                            <CardDescription>Ask a merchant to create items in Admin → Merchants.</CardDescription>
+                        </CardHeader>
+                    </Card>
+                ) : null}
+            </div>
+        );
+    }
     
-    const [providers, loanHistory, taxConfigs] = await Promise.all([
+    const [providers, loanHistory, taxConfigs, selectedItem] = await Promise.all([
         getProviders(),
         getLoanHistory(borrowerId),
         getTaxConfigs(),
+        getSelectedItem(itemId, qty),
     ]);
     
     return (
@@ -144,7 +231,7 @@ export default async function LoanPage({ searchParams }: { searchParams: any }) 
                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
             </div>
         }>
-            <DashboardClient providers={providers} initialLoanHistory={loanHistory} taxConfigs={taxConfigs} />
+            <DashboardClient providers={providers} initialLoanHistory={loanHistory} taxConfigs={taxConfigs} selectedItem={selectedItem} />
         </Suspense>
     );
 }
