@@ -13,6 +13,7 @@ LoanFlow is a comprehensive, multi-provider micro-credit platform built with a m
 *   **Automated Backend Processes**: The application includes scheduled background services for processing automated loan repayments from borrower accounts and for identifying and flagging Non-Performing Loans (NPLs) based on configurable rules.
 *   **Comprehensive Reporting & Auditing**: Admins have access to a detailed, exportable reporting suite to monitor key metrics like portfolio health, collections, income, and fund utilization. All critical actions are logged for compliance and security.
 *   **Role-Based Access Control (RBAC)**: The platform features a granular access control system, allowing administrators to define roles and permissions for different user types, restricting access to sensitive data and features.
+*   **Buy Now, Pay Later (BNPL)**: An integrated e-commerce shop where borrowers can purchase items from registered merchants using their available credit limit.
 
 ---
 
@@ -108,3 +109,59 @@ The project includes a worker script for handling scheduled tasks like automated
     ```bash
     npm run run:worker -- repayment-service
     ```
+
+---
+
+## 🏗️ Project Structure
+
+The project is organized into the following key directories:
+
+*   **`src/app/`**: The core of the Next.js application, using the App Router.
+    *   **`admin/`**: Contains all pages and components for the secure admin dashboard.
+    *   **`api/`**: Backend API routes that handle data fetching, mutations, and business logic.
+    *   **`(borrower)/`**: Contains pages for the borrower-facing application, such as the loan dashboard, application form, and history.
+*   **`src/components/`**: Reusable React components, organized by feature (e.g., `loan`, `user`, `admin`) and UI primitives (`ui/`).
+*   **`src/lib/`**: Shared utilities, libraries, and core business logic.
+    *   `prisma.ts`: Prisma client instance.
+    *   `session.ts`: Handles JWT-based session creation and verification.
+    *   `loan-calculator.ts`: Core logic for calculating loan repayment amounts, including interest and penalties.
+    *   `audit-log.ts`: Utility for creating audit trail entries for critical actions.
+*   **`src/actions/`**: Server-side functions (Server Actions) that encapsulate business logic, such as `eligibility.ts` for credit scoring.
+*   **`prisma/`**: Contains the database schema (`schema.prisma`) and migration files.
+    *   `seed.ts`: The script for populating the database with initial data.
+*   **`public/`**: Static assets like images and icons.
+*   **`src/worker.ts`**: The standalone script for running background tasks.
+
+---
+
+## 🔄 Application Workflow
+
+### 1. User Authentication
+*   **Admin**: Admins log in through `/admin/login`, which validates credentials against the `User` table. A JWT is stored in an `httpOnly` cookie to manage the session.
+*   **Middleware (`src/middleware.ts`)**: Protects all admin routes, redirecting unauthenticated users to the login page. It also enforces role-based access control (RBAC) by checking user permissions against the route they are trying to access.
+
+### 2. Loan Eligibility & Application (Borrower)
+1.  A borrower accesses the application, typically via `/loan?borrowerId=<phone_number>`.
+2.  They select a `LoanProvider` and a `LoanProduct`.
+3.  The `checkLoanEligibility` action is triggered, which uses the provider's configured scoring rules to calculate a credit score based on the borrower's provisioned data.
+4.  The system determines the borrower's maximum loan amount for that product, considering their score and any existing outstanding loans.
+5.  The borrower uses the UI to select a loan amount within their limit and submits the application.
+6.  The `/api/loans` endpoint is called to create the `LoanApplication` and `Loan` records in the database, and the funds are considered disbursed.
+
+### 3. BNPL E-commerce Flow
+1.  A borrower navigates the e-commerce interface under `/shop`.
+2.  They select an item and proceed to checkout.
+3.  The `/api/bnpl/checkout` endpoint validates their eligibility and credit limit against the total order amount.
+4.  If successful, an `Order` is created with a `PENDING_MERCHANT_CONFIRMATION` status, and a `LoanApplication` is generated.
+5.  The merchant views the order in their dashboard and confirms availability.
+6.  The borrower confirms delivery, which triggers the loan disbursement via `disburseLoanTx`, creating the `Loan` and finalizing the process.
+
+### 4. Admin Management
+*   Admins manage all core entities (Providers, Products, Users, Roles) through the `/admin` dashboard.
+*   **Maker-Checker Workflow**: Any critical changes (e.g., updating product fees, changing provider settings) do not take effect immediately. Instead, a `PendingChange` record is created. An "Approver" role must review and approve this change via the `/admin/approvals` page.
+*   Upon approval, the change is applied to the database.
+
+### 5. Automated Processes
+*   The `worker.ts` script runs background jobs.
+*   **NPL Flagging**: `updateNplStatus` finds loans that are overdue beyond a provider's configured `nplThresholdDays` and flags the borrower as 'NPL'.
+*   **Automated Repayments**: `processAutomatedRepayments` simulates deducting payments from a borrower's account for overdue loans.

@@ -35,37 +35,32 @@ export default async function ShopPage({
         <p className="text-muted-foreground">Select an item, then choose a loan product to pay later.</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {items.map((item) => {
           const href = borrowerId
             ? `/shop/${encodeURIComponent(item.id)}?borrowerId=${encodeURIComponent(borrowerId)}`
             : `/shop/${encodeURIComponent(item.id)}`;
 
           return (
-            <Card key={item.id}>
-              <CardHeader>
-                <CardTitle className="text-base">{item.name}</CardTitle>
-                <CardDescription>
+            <Card key={item.id} className="overflow-hidden group">
+               <div className="relative overflow-hidden">
+                <Link href={href}>
+                    <img 
+                        src={item.imageUrl ?? `https://placehold.co/600x400/eee/ccc?text=${encodeURIComponent(item.name)}`} 
+                        alt={item.name} 
+                        className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                </Link>
+              </div>
+              <CardHeader className="pt-4">
+                <CardTitle className="text-base truncate">{item.name}</CardTitle>
+                <CardDescription className="text-xs">
                   {item.merchant.name} • {item.category.name}
                 </CardDescription>
               </CardHeader>
-              <CardContent className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.name} className="w-20 h-20 object-cover rounded" />
-                  ) : (
-                    <div className="w-20 h-20 bg-muted rounded" />
-                  )}
-                  <div>
-                    <div className="font-medium">{formatCurrency(item.price)}</div>
-                    {item.videoUrl ? (
-                      <div className="text-sm mt-1">
-                        <a href={item.videoUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Watch video</a>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <Button asChild>
+              <CardContent className="flex items-center justify-between gap-4 pt-0">
+                <div className="font-semibold text-sm">{formatCurrency(item.price)}</div>
+                <Button asChild size="sm">
                   <Link href={href}>Select</Link>
                 </Button>
               </CardContent>
