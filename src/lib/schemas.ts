@@ -72,6 +72,10 @@ export const bnplCheckoutSchema = z.object({
   borrowerId: z.string(),
   productId: z.string(),
   itemId: z.string(),
+  // Legacy (absolute-price variants). Prefer optionValueIds for dynamic attributes pricing.
+  variantId: z.string().optional().nullable(),
+  // Dynamic attributes: list of selected ItemOptionValue ids.
+  optionValueIds: z.array(z.string()).optional().default([]),
   quantity: z.number().int().min(1).default(1),
 });
 

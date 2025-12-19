@@ -50,7 +50,21 @@ export default async function ShopPage({
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex items-center justify-between gap-4">
-                <div className="font-medium">{formatCurrency(item.price)}</div>
+                <div className="flex items-center gap-4">
+                  {item.imageUrl ? (
+                    <img src={item.imageUrl} alt={item.name} className="w-20 h-20 object-cover rounded" />
+                  ) : (
+                    <div className="w-20 h-20 bg-muted rounded" />
+                  )}
+                  <div>
+                    <div className="font-medium">{formatCurrency(item.price)}</div>
+                    {item.videoUrl ? (
+                      <div className="text-sm mt-1">
+                        <a href={item.videoUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Watch video</a>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
                 <Button asChild>
                   <Link href={href}>Select</Link>
                 </Button>

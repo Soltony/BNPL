@@ -23,6 +23,11 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
     const productId = searchParams.get('product');
     const borrowerId = searchParams.get('borrowerId');
     const itemId = searchParams.get('itemId');
+    const variantId = searchParams.get('variantId');
+    const optionValueIdsParam = searchParams.get('optionValueIds');
+    const optionValueIds = optionValueIdsParam
+        ? optionValueIdsParam.split(',').map(s => s.trim()).filter(Boolean)
+        : [];
     const qtyParam = searchParams.get('qty');
     const quantity = qtyParam ? Math.max(1, Number(qtyParam)) : 1;
     const isBnpl = !!itemId;
@@ -103,6 +108,9 @@ export function ApplyClient({ provider, taxConfigs }: { provider: LoanProvider, 
                         borrowerId,
                         productId: selectedProduct.id,
                         itemId,
+                        // Prefer dynamic attributes; keep variantId for backwards compatibility.
+                        optionValueIds,
+                        variantId,
                         quantity,
                     }),
                 });

@@ -17,6 +17,35 @@ import { Loader2, PlusCircle } from 'lucide-react';
 type Merchant = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 type Category = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 
+type StockLocation = {
+  id: string;
+  name: string;
+  address?: string | null;
+  isActive: boolean;
+  contactInfo?: string | null;
+};
+
+type ItemVariantOption = {
+  id: string;
+  price: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  size?: string | null;
+  color?: string | null;
+  material?: string | null;
+  item: { id: string; name: string };
+};
+
+type InventoryLevel = {
+  id: string;
+  variantId: string;
+  locationId: string;
+  quantityAvailable: number;
+  reservedQuantity: number;
+  lowStockThreshold?: number | null;
+  variant?: ItemVariantOption;
+  location?: StockLocation;
+};
+
 function StatusBadge({ status }: { status: string }) {
   const variant = status === 'ACTIVE' ? 'secondary' : 'destructive';
   return <Badge variant={variant}>{status}</Badge>;
@@ -30,6 +59,10 @@ export default function BranchPage() {
   const [loading, setLoading] = useState(true);
   const [merchants, setMerchants] = useState<Merchant[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+
+  const [catalogItems, setCatalogItems] = useState<any[]>([]);
+  const [locations, setLocations] = useState<StockLocation[]>([]);
+  const [inventoryLevels, setInventoryLevels] = useState<InventoryLevel[]>([]);
 
   const [merchantDialogOpen, setMerchantDialogOpen] = useState(false);
   const [editingMerchant, setEditingMerchant] = useState<Merchant | null>(null);
@@ -49,6 +82,21 @@ export default function BranchPage() {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserMerchantId, setNewUserMerchantId] = useState<string>('');
   const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const [locationDialogOpen, setLocationDialogOpen] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<StockLocation | null>(null);
+  const [locationName, setLocationName] = useState('');
+  const [locationAddress, setLocationAddress] = useState('');
+  const [locationIsActive, setLocationIsActive] = useState<'true' | 'false'>('true');
+  const [locationContactInfo, setLocationContactInfo] = useState('');
+
+  const [inventoryDialogOpen, setInventoryDialogOpen] = useState(false);
+  const [editingInventory, setEditingInventory] = useState<InventoryLevel | null>(null);
+  const [inventoryVariantId, setInventoryVariantId] = useState<string>('');
+  const [inventoryLocationId, setInventoryLocationId] = useState<string>('');
+  const [inventoryQtyAvailable, setInventoryQtyAvailable] = useState('');
+  const [inventoryReservedQty, setInventoryReservedQty] = useState('0');
+  const [inventoryLowStockThreshold, setInventoryLowStockThreshold] = useState('');
 
   const fetchMerchantUsers = async () => {
     try {
@@ -102,14 +150,23 @@ export default function BranchPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [mRes, cRes] = await Promise.all([
+      const [mRes, cRes, locRes, invRes, iRes] = await Promise.all([
         fetch('/api/admin/merchants'),
         fetch('/api/admin/product-categories'),
+        fetch('/api/admin/stock-locations'),
+        fetch('/api/admin/inventory-levels'),
+        fetch('/api/admin/items'),
       ]);
       if (!mRes.ok) throw new Error('Failed to load merchants');
       if (!cRes.ok) throw new Error('Failed to load categories');
+      if (!locRes.ok) throw new Error('Failed to load stock locations');
+      if (!invRes.ok) throw new Error('Failed to load inventory levels');
+      if (!iRes.ok) throw new Error('Failed to load items');
       setMerchants(await mRes.json());
       setCategories(await cRes.json());
+      setLocations(await locRes.json());
+      setInventoryLevels(await invRes.json());
+      setCatalogItems(await iRes.json());
       // Also load merchant users for the Merchant Users tab
       await fetchMerchantUsers();
     } catch (err: any) {
@@ -117,6 +174,29 @@ export default function BranchPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const variantOptions = useMemo(() => {
+    const options: ItemVariantOption[] = [];
+    for (const item of catalogItems || []) {
+      for (const v of item?.variants || []) {
+        options.push({
+          ...v,
+          item: { id: item.id, name: item.name },
+        });
+      }
+    }
+    return options;
+  }, [catalogItems]);
+
+  const formatVariantLabel = (v: ItemVariantOption) => {
+    const parts = [
+      v.size ? `Size: ${v.size}` : null,
+      v.color ? `Color: ${v.color}` : null,
+      v.material ? `Material: ${v.material}` : null,
+    ].filter(Boolean);
+    const suffix = parts.length ? ` (${parts.join(', ')})` : '';
+    return `${v.item.name}${suffix}`;
   };
 
   useEffect(() => {
@@ -218,6 +298,132 @@ export default function BranchPage() {
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete category');
       toast({ title: 'Deleted', description: 'Category deleted.' });
+      await load();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
+    }
+  };
+
+  const openAddLocation = () => {
+    setEditingLocation(null);
+    setLocationName('');
+    setLocationAddress('');
+    setLocationIsActive('true');
+    setLocationContactInfo('');
+    setLocationDialogOpen(true);
+  };
+
+  const openEditLocation = (loc: StockLocation) => {
+    setEditingLocation(loc);
+    setLocationName(loc.name);
+    setLocationAddress(loc.address || '');
+    setLocationIsActive(loc.isActive ? 'true' : 'false');
+    setLocationContactInfo(loc.contactInfo || '');
+    setLocationDialogOpen(true);
+  };
+
+  const saveLocation = async () => {
+    try {
+      const method = editingLocation ? 'PUT' : 'POST';
+      const payload: any = {
+        name: locationName,
+        address: locationAddress.trim() ? locationAddress.trim() : null,
+        isActive: locationIsActive === 'true',
+        contactInfo: locationContactInfo.trim() ? locationContactInfo.trim() : null,
+      };
+      if (editingLocation) payload.id = editingLocation.id;
+
+      const res = await fetch('/api/admin/stock-locations', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to save location');
+      toast({ title: 'Saved', description: 'Stock location saved.' });
+      setLocationDialogOpen(false);
+      await load();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to save', variant: 'destructive' });
+    }
+  };
+
+  const deleteLocation = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/stock-locations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete location');
+      toast({ title: 'Deleted', description: 'Stock location deleted.' });
+      await load();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
+    }
+  };
+
+  const openAddInventory = () => {
+    setEditingInventory(null);
+    setInventoryVariantId(variantOptions[0]?.id || '');
+    setInventoryLocationId(locations[0]?.id || '');
+    setInventoryQtyAvailable('0');
+    setInventoryReservedQty('0');
+    setInventoryLowStockThreshold('');
+    setInventoryDialogOpen(true);
+  };
+
+  const openEditInventory = (row: InventoryLevel) => {
+    setEditingInventory(row);
+    setInventoryVariantId(row.variantId);
+    setInventoryLocationId(row.locationId);
+    setInventoryQtyAvailable(String(row.quantityAvailable));
+    setInventoryReservedQty(String(row.reservedQuantity ?? 0));
+    setInventoryLowStockThreshold(row.lowStockThreshold === null || row.lowStockThreshold === undefined ? '' : String(row.lowStockThreshold));
+    setInventoryDialogOpen(true);
+  };
+
+  const saveInventory = async () => {
+    try {
+      const qtyAvailable = Number(inventoryQtyAvailable);
+      const reservedQty = Number(inventoryReservedQty || '0');
+      const lowThreshold = inventoryLowStockThreshold.trim() ? Number(inventoryLowStockThreshold) : null;
+
+      if (!inventoryVariantId) throw new Error('Variant is required');
+      if (!inventoryLocationId) throw new Error('Location is required');
+      if (!Number.isInteger(qtyAvailable) || qtyAvailable < 0) throw new Error('Invalid quantity available');
+      if (!Number.isInteger(reservedQty) || reservedQty < 0) throw new Error('Invalid reserved quantity');
+      if (lowThreshold !== null && (!Number.isInteger(lowThreshold) || lowThreshold < 0)) throw new Error('Invalid low stock threshold');
+
+      const method = editingInventory ? 'PUT' : 'POST';
+      const payload: any = {
+        variantId: inventoryVariantId,
+        locationId: inventoryLocationId,
+        quantityAvailable: qtyAvailable,
+        reservedQuantity: reservedQty,
+        lowStockThreshold: lowThreshold,
+      };
+      if (editingInventory) payload.id = editingInventory.id;
+
+      const res = await fetch('/api/admin/inventory-levels', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to save inventory');
+
+      toast({ title: 'Saved', description: 'Inventory saved.' });
+      setInventoryDialogOpen(false);
+      await load();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.message || 'Failed to save', variant: 'destructive' });
+    }
+  };
+
+  const deleteInventory = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/inventory-levels?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || 'Failed to delete inventory');
+      toast({ title: 'Deleted', description: 'Inventory deleted.' });
       await load();
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
@@ -456,6 +662,116 @@ export default function BranchPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCategoryDialogOpen(false)}>Cancel</Button>
             <Button onClick={saveCategory} style={{ backgroundColor: themeColor }} className="text-white" disabled={!categoryName.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={locationDialogOpen} onOpenChange={setLocationDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingLocation ? 'Edit Location' : 'Add Location'}</DialogTitle>
+            <DialogDescription>Physical or virtual stock locations.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Name</div>
+              <Input value={locationName} onChange={(e) => setLocationName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Address</div>
+              <Input value={locationAddress} onChange={(e) => setLocationAddress(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Status</div>
+              <Select value={locationIsActive} onValueChange={(v) => setLocationIsActive(v as any)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="true">ACTIVE</SelectItem>
+                  <SelectItem value="false">INACTIVE</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Contact Info</div>
+              <Input value={locationContactInfo} onChange={(e) => setLocationContactInfo(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLocationDialogOpen(false)}>Cancel</Button>
+            <Button onClick={saveLocation} style={{ backgroundColor: themeColor }} className="text-white" disabled={!locationName.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={inventoryDialogOpen} onOpenChange={setInventoryDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingInventory ? 'Edit Inventory' : 'Add Inventory'}</DialogTitle>
+            <DialogDescription>Inventory by variant and location.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Variant</div>
+              <Select value={inventoryVariantId} onValueChange={(v) => setInventoryVariantId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select variant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {variantOptions.map((v) => (
+                    <SelectItem key={v.id} value={v.id}>
+                      {formatVariantLabel(v)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Location</div>
+              <Select value={inventoryLocationId} onValueChange={(v) => setInventoryLocationId(v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Quantity Available</div>
+                <Input value={inventoryQtyAvailable} onChange={(e) => setInventoryQtyAvailable(e.target.value)} inputMode="numeric" />
+              </div>
+              <div className="space-y-2">
+                <div className="text-sm font-medium">Reserved Quantity</div>
+                <Input value={inventoryReservedQty} onChange={(e) => setInventoryReservedQty(e.target.value)} inputMode="numeric" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Low Stock Threshold</div>
+              <Input value={inventoryLowStockThreshold} onChange={(e) => setInventoryLowStockThreshold(e.target.value)} inputMode="numeric" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInventoryDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={saveInventory}
+              style={{ backgroundColor: themeColor }}
+              className="text-white"
+              disabled={!inventoryVariantId || !inventoryLocationId || !inventoryQtyAvailable.trim()}
+            >
               Save
             </Button>
           </DialogFooter>

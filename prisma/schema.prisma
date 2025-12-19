@@ -15,24 +15,24 @@ datasource db {
 // --------------------------------------
 
 model User {
-  id              String          @id @default(cuid())
-  fullName        String
-  email           String          @unique
-  phoneNumber     String          @unique
-  password        String
-  passwordChangeRequired Boolean @default(true)
-  status          String
-  roleId          String
-  role            Role            @relation(fields: [roleId], references: [id])
-  sessions        Session[]
-  loanProviderId  String?
-  loanProvider    LoanProvider?   @relation(fields: [loanProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  merchantId      String?
-  merchant        Merchant?       @relation(fields: [merchantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
-  createdChanges  PendingChange[] @relation("CreatedBy")
-  approvedChanges PendingChange[] @relation("ApprovedBy")
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id                     String          @id @default(cuid())
+  fullName               String
+  email                  String          @unique
+  phoneNumber            String          @unique
+  password               String
+  passwordChangeRequired Boolean         @default(true)
+  status                 String
+  roleId                 String
+  role                   Role            @relation(fields: [roleId], references: [id])
+  sessions               Session[]
+  loanProviderId         String?
+  loanProvider           LoanProvider?   @relation(fields: [loanProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  merchantId             String?
+  merchant               Merchant?       @relation(fields: [merchantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  createdChanges         PendingChange[] @relation("CreatedBy")
+  approvedChanges        PendingChange[] @relation("ApprovedBy")
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
 
   @@index([merchantId])
 }
@@ -173,9 +173,9 @@ model Loan {
 // --------------------------------------
 
 model Merchant {
-  id        String  @id @default(cuid())
-  name      String  @unique
-  status    String  @default("ACTIVE") // ACTIVE, INACTIVE
+  id        String   @id @default(cuid())
+  name      String   @unique
+  status    String   @default("ACTIVE") // ACTIVE, INACTIVE
   users     User[]
   items     Item[]
   orders    Order[]
@@ -184,67 +184,214 @@ model Merchant {
 }
 
 model ProductCategory {
-  id        String  @id @default(cuid())
-  name      String  @unique
-  status    String  @default("ACTIVE") // ACTIVE, INACTIVE
-  items     Item[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String         @id @default(cuid())
+  name          String         @unique
+  status        String         @default("ACTIVE") // ACTIVE, INACTIVE
+  items         Item[]
+  discountRules DiscountRule[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model Item {
-  id            String          @id @default(cuid())
-  merchantId    String
-  merchant      Merchant        @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  categoryId    String
-  category      ProductCategory @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  name          String
-  description   String?         @db.Text
-  price         Float
-  currency      String          @default("ETB")
-  status        String          @default("ACTIVE") // ACTIVE, INACTIVE
-  stockQuantity Int?
-  orderItems    OrderItem[]
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  id                         String                      @id @default(cuid())
+  merchantId                 String
+  merchant                   Merchant                    @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  categoryId                 String
+  category                   ProductCategory             @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  name                       String
+  description                String?                     @db.Text
+  price                      Float
+  imageUrl                   String?                     @db.Text
+  videoUrl                   String?                     @db.Text
+  currency                   String                      @default("ETB")
+  status                     String                      @default("ACTIVE") // ACTIVE, INACTIVE
+  stockQuantity              Int?
+  orderItems                 OrderItem[]
+  variants                   ItemVariant[]
+  optionGroups               ItemOptionGroup[]
+  inventoryLevels            InventoryLevel[]
+  combinationInventoryLevels CombinationInventoryLevel[]
+  discountRules              DiscountRule[]
+  createdAt                  DateTime                    @default(now())
+  updatedAt                  DateTime                    @updatedAt
 
   @@index([merchantId])
   @@index([categoryId])
 }
 
 model Order {
-  id                String         @id @default(cuid())
+  id                String           @id @default(cuid())
   borrowerId        String
-  borrower          Borrower       @relation(fields: [borrowerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  borrower          Borrower         @relation(fields: [borrowerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   merchantId        String
-  merchant          Merchant       @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  status            String         @default("PENDING_MERCHANT_CONFIRMATION") // PENDING_MERCHANT_CONFIRMATION, ON_DELIVERY, DELIVERED, CANCELLED
+  merchant          Merchant         @relation(fields: [merchantId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status            String           @default("PENDING_MERCHANT_CONFIRMATION") // PENDING_MERCHANT_CONFIRMATION, ON_DELIVERY, DELIVERED, CANCELLED
   totalAmount       Float
-  loanApplicationId String?        @unique
+  loanApplicationId String?          @unique
   loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  loanId            String?        @unique
-  loan              Loan?          @relation(fields: [loanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  loanId            String?          @unique
+  loan              Loan?            @relation(fields: [loanId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items             OrderItem[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([borrowerId])
   @@index([merchantId])
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
-  orderId   String
-  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  itemId    String
-  item      Item   @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
-  quantity  Int    @default(1)
-  unitPrice Float
-  lineTotal Float
+  id               String                     @id @default(cuid())
+  orderId          String
+  order            Order                      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemId           String
+  item             Item                       @relation(fields: [itemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  variantId        String?
+  variant          ItemVariant?               @relation(fields: [variantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  quantity         Int                        @default(1)
+  unitPrice        Float
+  lineTotal        Float
+  optionSelections OrderItemOptionSelection[]
 
-  @@unique([orderId, itemId])
+  @@unique([orderId, itemId, variantId])
   @@index([orderId])
   @@index([itemId])
+  @@index([variantId])
+}
+
+model ItemOptionGroup {
+  id         String   @id @default(cuid())
+  itemId     String
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  name       String
+  status     String   @default("ACTIVE") // ACTIVE, INACTIVE
+  isRequired Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  values ItemOptionValue[]
+
+  @@unique([itemId, name])
+  @@index([itemId])
+}
+
+model ItemOptionValue {
+  id         String          @id @default(cuid())
+  groupId    String
+  group      ItemOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  label      String
+  priceDelta Float           @default(0)
+  status     String          @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  orderSelections OrderItemOptionSelection[]
+
+  @@unique([groupId, label])
+  @@index([groupId])
+}
+
+model OrderItemOptionSelection {
+  id               String          @id @default(cuid())
+  orderItemId      String
+  orderItem        OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  optionValueId    String
+  optionValue      ItemOptionValue @relation(fields: [optionValueId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  optionGroupName  String?
+  optionValueLabel String?
+  priceDelta       Float
+  createdAt        DateTime        @default(now())
+
+  @@unique([orderItemId, optionValueId])
+  @@index([orderItemId])
+  @@index([optionValueId])
+}
+
+model ItemVariant {
+  id         String      @id @default(cuid())
+  itemId     String
+  item       Item        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  size       String?
+  color      String?
+  material   String?
+  price      Float
+  status     String      @default("ACTIVE") // ACTIVE, INACTIVE
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  orderItems OrderItem[]
+
+  @@unique([itemId, size, color, material])
+  @@index([itemId])
+}
+
+model DiscountRule {
+  id              String           @id @default(cuid())
+  type            String // percentage | fixed | buy-X-get-Y
+  value           Float
+  startDate       DateTime?
+  endDate         DateTime?
+  itemId          String?
+  item            Item?            @relation(fields: [itemId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  categoryId      String?
+  category        ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  minimumQuantity Int?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([itemId])
+  @@index([categoryId])
+}
+
+model StockLocation {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  isActive    Boolean  @default(true)
+  contactInfo String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  inventoryLevels            InventoryLevel[]
+  combinationInventoryLevels CombinationInventoryLevel[]
+}
+
+// Inventory per combination of option values (attributes) + location
+// combinationKey is a canonical string derived from sorted optionValueIds, e.g. "ov1|ov2|ov3".
+// optionValueIds is JSON array string of option value ids for display/debugging.
+model CombinationInventoryLevel {
+  id                String        @id @default(cuid())
+  itemId            String
+  item              Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  locationId        String
+  location          StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  combinationKey    String
+  optionValueIds    String        @db.NVarChar(Max)
+  quantityAvailable Int
+  reservedQuantity  Int           @default(0)
+  lowStockThreshold Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([itemId, locationId, combinationKey])
+  @@index([itemId])
+  @@index([locationId])
+}
+
+model InventoryLevel {
+  id                String        @id @default(cuid())
+  itemId            String
+  item              Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  locationId        String
+  location          StockLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  quantityAvailable Int
+  reservedQuantity  Int           @default(0)
+  lowStockThreshold Int?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@unique([itemId, locationId])
+  @@index([itemId])
+  @@index([locationId])
 }
 
 model Payment {
@@ -554,17 +701,17 @@ model PaymentTransaction {
 
 // Records disbursement requests sent to the external payment/disbursement service
 model DisbursementTransaction {
-  id               String   @id @default(cuid())
-  transactionId    String?  // transaction id returned by upstream, if any
-  providerId       String
+  id                 String   @id @default(cuid())
+  transactionId      String? // transaction id returned by upstream, if any
+  providerId         String
   originalProviderId String? // provider id received from caller before any forced override
-  creditAccount    String
-  amount           Float?
-  requestPayload   String   @db.NVarChar(Max)
-  responsePayload  String?  @db.NVarChar(Max)
-  rawResponse      String?  @db.NVarChar(Max)
-  statusCode       Int?
-  createdAt        DateTime @default(now())
+  creditAccount      String
+  amount             Float?
+  requestPayload     String   @db.NVarChar(Max)
+  responsePayload    String?  @db.NVarChar(Max)
+  rawResponse        String?  @db.NVarChar(Max)
+  statusCode         Int?
+  createdAt          DateTime @default(now())
 
   @@index([providerId])
   @@index([transactionId])

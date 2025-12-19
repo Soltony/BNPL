@@ -11,6 +11,8 @@ import {
   BookUser,
   CheckSquare,
   Store,
+  Package,
+  ClipboardList,
 } from 'lucide-react';
 
 export const allMenuItems = [
@@ -31,6 +33,32 @@ export const allMenuItems = [
     label: 'Merchants',
     icon: Store,
     roles: ['Super Admin', 'Loan Manager'],
+    children: [
+      {
+        path: '/admin/merchants/items',
+        label: 'Items',
+        icon: Package,
+        roles: ['Super Admin', 'Loan Manager'],
+      },
+      {
+        path: '/admin/merchants/orders',
+        label: 'Orders',
+        icon: ClipboardList,
+        roles: ['Super Admin', 'Loan Manager'],
+      },
+      {
+        path: '/admin/merchants/discount-rules',
+        label: 'Discount Rules',
+        icon: FileText,
+        roles: ['Super Admin', 'Loan Manager'],
+      },
+      {
+        path: '/admin/merchants/locations-inventory',
+        label: 'Location',
+        icon: FolderArchive,
+        roles: ['Super Admin', 'Loan Manager'],
+      },
+    ],
   },
   {
     path: '/admin/reports',

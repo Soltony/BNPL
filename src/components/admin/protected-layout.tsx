@@ -13,7 +13,8 @@ import {
   LogOut,
   User,
   FileCog,
-  BadgeAlert
+  BadgeAlert,
+  ChevronRight,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -23,6 +24,10 @@ import {
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
+  SidebarMenuAction,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
@@ -40,6 +45,7 @@ import { useAuth } from '@/hooks/use-auth';
 import type { LoanProvider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { allMenuItems } from '@/lib/menu-items';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 
 // Function to convert hex to HSL
@@ -165,21 +171,74 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
           </SidebarHeader>
           <SidebarContent>
             <SidebarMenu>
-              {menuItems.map((item) => (
-                <SidebarMenuItem key={item.label}>
-                  <Link href={item.path}>
-                    <SidebarMenuButton
-                      isActive={pathname.startsWith(item.path) && (item.path !== '/admin' || pathname === '/admin')}
-                      tooltip={{
-                        children: item.label,
-                      }}
-                    >
-                      <item.icon />
-                      <span>{item.label}</span>
-                    </SidebarMenuButton>
-                  </Link>
-                </SidebarMenuItem>
-              ))}
+              {menuItems.map((item) => {
+                const children = (item as any).children as undefined | Array<{ path: string; label: string; icon: any }>;
+                const hasChildren = !!children?.length;
+                const isActiveTop = pathname.startsWith(item.path) && (item.path !== '/admin' || pathname === '/admin');
+
+                if (!hasChildren) {
+                  return (
+                    <SidebarMenuItem key={item.label}>
+                      <Link href={item.path}>
+                        <SidebarMenuButton
+                          isActive={isActiveTop}
+                          tooltip={{
+                            children: item.label,
+                          }}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </Link>
+                    </SidebarMenuItem>
+                  );
+                }
+
+                const defaultOpen = pathname.startsWith(item.path);
+
+                return (
+                  <Collapsible key={item.label} defaultOpen={defaultOpen}>
+                    <SidebarMenuItem>
+                      <Link href={item.path}>
+                        <SidebarMenuButton
+                          isActive={isActiveTop}
+                          tooltip={{
+                            children: item.label,
+                          }}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </Link>
+
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuAction showOnHover className="data-[state=open]:rotate-90">
+                          <ChevronRight className="h-4 w-4" />
+                          <span className="sr-only">Toggle {item.label}</span>
+                        </SidebarMenuAction>
+                      </CollapsibleTrigger>
+
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {children!.map((child) => {
+                            const isActiveChild = pathname.startsWith(child.path);
+                            return (
+                              <SidebarMenuSubItem key={child.label}>
+                                <SidebarMenuSubButton asChild isActive={isActiveChild}>
+                                  <Link href={child.path}>
+                                    <child.icon />
+                                    <span>{child.label}</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            );
+                          })}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                );
+              })}
             </SidebarMenu>
           </SidebarContent>
         </Sidebar>

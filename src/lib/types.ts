@@ -223,6 +223,7 @@ export interface User {
     role: UserRole;
     status: UserStatus;
     providerId?: string | null;
+    merchantId?: string | null;
     providerName?: string;
     permissions: Permissions;
 }

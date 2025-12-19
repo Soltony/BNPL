@@ -134,10 +134,36 @@ async function getSelectedItem(itemId?: string, qty?: number) {
     if (!itemId) return null;
     const item = await prisma.item.findUnique({
         where: { id: itemId },
-        include: { merchant: true, category: true },
+        include: {
+            merchant: true,
+            category: true,
+            optionGroups: {
+                where: { status: 'ACTIVE' },
+                include: {
+                    values: {
+                        where: { status: 'ACTIVE' },
+                        orderBy: { createdAt: 'asc' },
+                    },
+                },
+                orderBy: { createdAt: 'asc' },
+            },
+        },
     });
     if (!item || item.status !== 'ACTIVE') return null;
     const quantity = qty && qty > 0 ? qty : 1;
+
+    const optionGroups = (item.optionGroups ?? []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        isRequired: g.isRequired,
+        values: (g.values ?? []).map((v) => ({
+            id: v.id,
+            label: v.label,
+            priceDelta: v.priceDelta,
+            status: v.status,
+        })),
+    }));
+
     return {
         id: item.id,
         name: item.name,
@@ -146,6 +172,7 @@ async function getSelectedItem(itemId?: string, qty?: number) {
         categoryName: item.category.name,
         quantity,
         totalAmount: item.price * quantity,
+        optionGroups,
     };
 }
 
@@ -158,6 +185,10 @@ export default async function LoanPage({ searchParams }: { searchParams: any }) 
     const borrowerId = params?.borrowerId as string;
     const itemId = params?.itemId as string | undefined;
     const qty = params?.qty ? Number(params.qty) : undefined;
+    const optionValueIdsParam = params?.optionValueIds as string | undefined;
+    const selectedOptionValueIds = optionValueIdsParam
+        ? optionValueIdsParam.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
 
     // Borrower must pick an item before we show loan products (DashboardClient).
     if (!itemId) {
@@ -224,6 +255,13 @@ export default async function LoanPage({ searchParams }: { searchParams: any }) 
         getTaxConfigs(),
         getSelectedItem(itemId, qty),
     ]);
+
+    const selectedItemWithOptions = selectedItem
+        ? {
+            ...selectedItem,
+            selectedOptionValueIds,
+        }
+        : selectedItem;
     
     return (
         <Suspense fallback={
@@ -231,7 +269,7 @@ export default async function LoanPage({ searchParams }: { searchParams: any }) 
                 <Loader2 className="h-12 w-12 animate-spin text-primary" />
             </div>
         }>
-            <DashboardClient providers={providers} initialLoanHistory={loanHistory} taxConfigs={taxConfigs} selectedItem={selectedItem} />
+            <DashboardClient providers={providers} initialLoanHistory={loanHistory} taxConfigs={taxConfigs} selectedItem={selectedItemWithOptions} />
         </Suspense>
     );
 }

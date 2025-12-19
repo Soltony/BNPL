@@ -167,7 +167,7 @@ model ProvisionedData {
 
 model Customer {
   id                String            @id
-  age               Int
+    age               Int
   gender            String
   monthlyIncome     Float
   educationLevel    String

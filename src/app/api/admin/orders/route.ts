@@ -25,7 +25,13 @@ export async function GET(req: NextRequest) {
       include: {
         merchant: true,
         borrower: true,
-        items: { include: { item: { include: { category: true } } } },
+        items: {
+          include: {
+            item: { include: { category: true } },
+            optionSelections: { include: { optionValue: true } },
+            variant: true,
+          },
+        },
         loanApplication: { include: { product: { include: { provider: true } } } },
         loan: true,
       },
@@ -67,7 +73,13 @@ export async function PUT(req: NextRequest) {
       include: {
         merchant: true,
         borrower: true,
-        items: { include: { item: { include: { category: true } } } },
+        items: {
+          include: {
+            item: { include: { category: true } },
+            optionSelections: { include: { optionValue: true } },
+            variant: true,
+          },
+        },
       },
     });
 

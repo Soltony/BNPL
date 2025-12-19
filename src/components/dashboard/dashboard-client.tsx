@@ -29,6 +29,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { Checkbox } from '../ui/checkbox';
 import { calculateTotalRepayable } from '@/lib/loan-calculator';
 import { Skeleton } from '../ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const formatCurrency = (amount: number | null | undefined) => {
     if (amount === null || amount === undefined || isNaN(amount)) return '0.00 ETB';
@@ -47,6 +48,18 @@ interface DashboardClientProps {
         categoryName: string;
         quantity: number;
         totalAmount: number;
+        optionGroups?: Array<{
+            id: string;
+            name: string;
+            isRequired?: boolean;
+            values: Array<{
+                id: string;
+                label: string;
+                priceDelta: number;
+                status?: string;
+            }>;
+        }>;
+        selectedOptionValueIds?: string[];
     } | null;
 }
 
@@ -83,6 +96,73 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs, sel
 
   const [isMaxLimitVisible, setIsMaxLimitVisible] = useState(true);
   const [isAvailableVisible, setIsAvailableVisible] = useState(true);
+
+    const [selectedOptionValueIdsByGroup, setSelectedOptionValueIdsByGroup] = useState<Record<string, string>>(() => {
+        const map: Record<string, string> = {};
+        const initialIds = selectedItem?.selectedOptionValueIds ?? [];
+        const groups = selectedItem?.optionGroups ?? [];
+        for (const g of groups) {
+            const match = g.values.find(v => initialIds.includes(v.id));
+            const first = g.values[0]?.id;
+            if (match?.id) map[g.id] = match.id;
+            else if (first) map[g.id] = first;
+        }
+        return map;
+    });
+
+    useEffect(() => {
+        const map: Record<string, string> = {};
+        const initialIds = selectedItem?.selectedOptionValueIds ?? [];
+        const groups = selectedItem?.optionGroups ?? [];
+        for (const g of groups) {
+            const match = g.values.find(v => initialIds.includes(v.id));
+            const first = g.values[0]?.id;
+            if (match?.id) map[g.id] = match.id;
+            else if (first) map[g.id] = first;
+        }
+        setSelectedOptionValueIdsByGroup(map);
+    }, [selectedItem?.id]);
+
+    const selectedOptionValueIds = useMemo(() => {
+        return Object.values(selectedOptionValueIdsByGroup).filter(Boolean);
+    }, [selectedOptionValueIdsByGroup]);
+
+    const [previewFinalTotal, setPreviewFinalTotal] = useState<number | null>(null);
+    const [previewFinalUnitPrice, setPreviewFinalUnitPrice] = useState<number | null>(null);
+    const [previewAppliedDiscount, setPreviewAppliedDiscount] = useState<{ ruleId: string; type: string; value: number; amount: number } | null>(null);
+
+    useEffect(() => {
+        const fetchPreview = async () => {
+            if (!selectedItem?.id) return;
+            try {
+                const params = new URLSearchParams();
+                params.set('itemId', selectedItem.id);
+                params.set('qty', String(selectedItem.quantity ?? 1));
+                if (selectedOptionValueIds.length) params.set('optionValueIds', selectedOptionValueIds.join(','));
+                const res = await fetch(`/api/pricing/preview?${params.toString()}`);
+                if (!res.ok) return;
+                const data = await res.json();
+                setPreviewFinalTotal(typeof data.finalTotal === 'number' ? data.finalTotal : null);
+                setPreviewFinalUnitPrice(typeof data.finalUnitPrice === 'number' ? data.finalUnitPrice : null);
+                setPreviewAppliedDiscount(data.appliedDiscount ?? null);
+            } catch (err) {
+                console.error('pricing preview error', err);
+            }
+        };
+        fetchPreview();
+    }, [selectedItem?.id, selectedItem?.quantity, selectedOptionValueIds]);
+
+    const selectedOptionsDelta = useMemo(() => {
+        const groups = selectedItem?.optionGroups ?? [];
+        const lookup = new Map<string, number>();
+        for (const g of groups) {
+            for (const v of g.values) lookup.set(v.id, v.priceDelta || 0);
+        }
+        return selectedOptionValueIds.reduce((sum, id) => sum + (lookup.get(id) ?? 0), 0);
+    }, [selectedItem?.optionGroups, selectedOptionValueIds]);
+
+    const selectedItemUnitPrice = (selectedItem?.price ?? 0) + selectedOptionsDelta;
+    const selectedItemTotalAmount = (selectedItem?.quantity ?? 0) * selectedItemUnitPrice;
 
   
   const checkAgreement = useCallback(async (providerId: string) => {
@@ -262,7 +342,7 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs, sel
         const productLimit = eligibility.limits[product.id] ?? 0;
 
         if (selectedItem) {
-            const requiredAmount = selectedItem.totalAmount;
+            const requiredAmount = previewFinalTotal ?? selectedItemTotalAmount;
             if (requiredAmount > productLimit) {
                 toast({
                     title: 'Insufficient limit',
@@ -273,6 +353,12 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs, sel
             }
             params.set('itemId', selectedItem.id);
             params.set('qty', String(selectedItem.quantity));
+            if (selectedOptionValueIds.length) {
+                params.set('optionValueIds', selectedOptionValueIds.join(','));
+            } else {
+                params.delete('optionValueIds');
+            }
+            params.delete('variantId');
             // BNPL: item total is fixed; borrower chooses the product/terms, not the amount.
             params.set('min', String(requiredAmount));
             params.set('max', String(requiredAmount));
@@ -451,9 +537,49 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs, sel
                                                     <div className="font-medium">{selectedItem.name}</div>
                                                     <div className="text-sm text-muted-foreground">{selectedItem.quantity}×</div>
                                                 </div>
+
+                                                {selectedItem.optionGroups && selectedItem.optionGroups.length > 0 ? (
+                                                    <div className="flex flex-col gap-3 pt-1">
+                                                        {selectedItem.optionGroups.map((g) => (
+                                                            <div key={g.id} className="flex flex-col gap-2">
+                                                                <div className="text-sm text-muted-foreground">{g.name}</div>
+                                                                <Select
+                                                                    value={selectedOptionValueIdsByGroup[g.id] ?? ''}
+                                                                    onValueChange={(val) =>
+                                                                        setSelectedOptionValueIdsByGroup((prev) => ({ ...prev, [g.id]: val }))
+                                                                    }
+                                                                >
+                                                                    <SelectTrigger>
+                                                                        <SelectValue placeholder={`Select ${g.name}`} />
+                                                                    </SelectTrigger>
+                                                                    <SelectContent>
+                                                                        {g.values.map((v) => (
+                                                                            <SelectItem key={v.id} value={v.id}>
+                                                                                {v.label} ({v.priceDelta >= 0 ? '+' : ''}{formatCurrency(v.priceDelta)})
+                                                                            </SelectItem>
+                                                                        ))}
+                                                                    </SelectContent>
+                                                                </Select>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : null}
+
                                                 <div className="flex items-center justify-between">
                                                     <div className="text-sm text-muted-foreground">Total</div>
-                                                    <div className="font-semibold">{formatCurrency(selectedItem.totalAmount)}</div>
+                                                    <div className="font-semibold">
+                                                        {previewFinalTotal !== null && previewFinalTotal !== selectedItemTotalAmount ? (
+                                                            <div className="space-y-0">
+                                                                <div className="text-sm text-muted-foreground line-through">{formatCurrency(selectedItemTotalAmount)}</div>
+                                                                <div>{formatCurrency(previewFinalTotal)}</div>
+                                                                {previewAppliedDiscount ? (
+                                                                    <div className="text-xs text-green-600">Discount: -{formatCurrency(previewAppliedDiscount.amount)}</div>
+                                                                ) : null}
+                                                            </div>
+                                                        ) : (
+                                                            <div>{formatCurrency(selectedItemTotalAmount)}</div>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 <div className="pt-2">
                                                     <Button asChild variant="outline">
