@@ -524,71 +524,7 @@ export function DashboardClient({ providers, initialLoanHistory, taxConfigs, sel
                     </Card>
                   )}
 
-                                    {selectedItem && (
-                                        <Card className="my-4">
-                                            <CardHeader>
-                                                <CardTitle className="text-base">Selected item</CardTitle>
-                                                <CardDescription>
-                                                    {selectedItem.merchantName} • {selectedItem.categoryName}
-                                                </CardDescription>
-                                            </CardHeader>
-                                            <CardContent className="flex flex-col gap-2">
-                                                <div className="flex items-center justify-between">
-                                                    <div className="font-medium">{selectedItem.name}</div>
-                                                    <div className="text-sm text-muted-foreground">{selectedItem.quantity}×</div>
-                                                </div>
 
-                                                {selectedItem.optionGroups && selectedItem.optionGroups.length > 0 ? (
-                                                    <div className="flex flex-col gap-3 pt-1">
-                                                        {selectedItem.optionGroups.map((g) => (
-                                                            <div key={g.id} className="flex flex-col gap-2">
-                                                                <div className="text-sm text-muted-foreground">{g.name}</div>
-                                                                <Select
-                                                                    value={selectedOptionValueIdsByGroup[g.id] ?? ''}
-                                                                    onValueChange={(val) =>
-                                                                        setSelectedOptionValueIdsByGroup((prev) => ({ ...prev, [g.id]: val }))
-                                                                    }
-                                                                >
-                                                                    <SelectTrigger>
-                                                                        <SelectValue placeholder={`Select ${g.name}`} />
-                                                                    </SelectTrigger>
-                                                                    <SelectContent>
-                                                                        {g.values.map((v) => (
-                                                                            <SelectItem key={v.id} value={v.id}>
-                                                                                {v.label} ({v.priceDelta >= 0 ? '+' : ''}{formatCurrency(v.priceDelta)})
-                                                                            </SelectItem>
-                                                                        ))}
-                                                                    </SelectContent>
-                                                                </Select>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : null}
-
-                                                <div className="flex items-center justify-between">
-                                                    <div className="text-sm text-muted-foreground">Total</div>
-                                                    <div className="font-semibold">
-                                                        {previewFinalTotal !== null && previewFinalTotal !== selectedItemTotalAmount ? (
-                                                            <div className="space-y-0">
-                                                                <div className="text-sm text-muted-foreground line-through">{formatCurrency(selectedItemTotalAmount)}</div>
-                                                                <div>{formatCurrency(previewFinalTotal)}</div>
-                                                                {previewAppliedDiscount ? (
-                                                                    <div className="text-xs text-green-600">Discount: -{formatCurrency(previewAppliedDiscount.amount)}</div>
-                                                                ) : null}
-                                                            </div>
-                                                        ) : (
-                                                            <div>{formatCurrency(selectedItemTotalAmount)}</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className="pt-2">
-                                                    <Button asChild variant="outline">
-                                                        <Link href={`/shop?${borrowerId ? `borrowerId=${encodeURIComponent(borrowerId)}` : ''}`}>Change item</Link>
-                                                    </Button>
-                                                </div>
-                                            </CardContent>
-                                        </Card>
-                                    )}
                   
                   <div className="flex justify-end mt-4">
                     <Link
