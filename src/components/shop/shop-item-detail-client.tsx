@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { Play } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -178,8 +179,14 @@ export function ShopItemDetailClient({ item, borrowerId }: { item: ShopItem; bor
 
         <div className="pt-2 flex gap-2">
           {item.videoUrl ? (
-            <a href={item.videoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-2 rounded-md text-sm text-primary underline">
-              Watch video
+            <a
+              href={item.videoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md shadow-sm"
+            >
+              <Play className="h-4 w-4 text-primary" />
+              <span>Watch video</span>
             </a>
           ) : null}
           <Button asChild variant="outline">

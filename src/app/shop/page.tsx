@@ -2,12 +2,16 @@ import Link from 'next/link';
 import prisma from '@/lib/prisma';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { Menu, User, Heart, ShoppingBasket, Search } from 'lucide-react';
-import { Carousel, CarouselContent, CarouselItem } from '@/components/ui/carousel';
+import { Play, ShoppingCart } from 'lucide-react';
+import ShopSearchClient from '@/components/shop/shop-search-client';
+import ShopHeaderSearchClient from '@/components/shop/shop-header-search-client';
 
-const formatCurrency = (amount: number) =>
-  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + ' ETB';
+const formatAmount = (amount: number) =>
+  new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+
+const CURRENCY = 'ETB';
 
 export default async function ShopPage({
   searchParams,
@@ -17,36 +21,60 @@ export default async function ShopPage({
   const sp = await searchParams;
   const rawBorrowerId = sp?.borrowerId;
   const borrowerId = Array.isArray(rawBorrowerId) ? rawBorrowerId[0] : rawBorrowerId;
+  const rawQuery = sp?.q;
+  const query = Array.isArray(rawQuery) ? rawQuery[0] : rawQuery;
+  const rawCategoryId = sp?.categoryId;
+  const categoryId = Array.isArray(rawCategoryId) ? rawCategoryId[0] : rawCategoryId;
 
-  const [items, merchants] = await Promise.all([
-    prisma.item.findMany({
-      where: {
-        status: 'ACTIVE',
-        merchant: { status: 'ACTIVE' },
-        category: { status: 'ACTIVE' },
-      },
-      include: {
-        merchant: true,
-        category: true,
-        discountRules: {
-          where: {
-            startDate: { lte: new Date() },
-            endDate: { gte: new Date() },
+  const ordersHref = borrowerId
+    ? `/bnpl/orders?borrowerId=${encodeURIComponent(borrowerId)}`
+    : '/bnpl/orders';
+
+  const categories = await prisma.productCategory.findMany({ where: { status: 'ACTIVE' }, orderBy: { name: 'asc' } });
+
+  const items = await prisma.item.findMany({
+    where: {
+      status: 'ACTIVE',
+      merchant: { status: 'ACTIVE' },
+      category: { status: 'ACTIVE', ...(categoryId ? { id: categoryId } : {}) },
+      ...(query
+        ? {
+            OR: [
+              { name: { contains: query } },
+              { merchant: { name: { contains: query } } },
+              { category: { name: { contains: query } } },
+            ],
           }
-        }
+        : {}),
+    },
+    include: {
+      merchant: true,
+      category: true,
+      discountRules: {
+        where: {
+          startDate: { lte: new Date() },
+          endDate: { gte: new Date() },
+        },
       },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.merchant.findMany({
-      where: {
-        status: 'ACTIVE'
-      },
-      take: 10,
-      orderBy: {
-        name: 'asc'
-      }
-    })
-  ]);
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  // Serialize minimal fields for client hydration
+  const serializedItems = items.map((item) => {
+    const discount = item.discountRules?.[0];
+    return {
+      id: item.id,
+      name: item.name,
+      imageUrl: item.imageUrl,
+      videoUrl: item.videoUrl,
+      price: item.price,
+      merchantName: item.merchant?.name ?? null,
+      categoryName: item.category?.name ?? null,
+      discount: discount ? { type: discount.type, value: String(discount.value) } : null,
+    };
+  });
+
+  // `ShopSearchClient` is a client component imported above and will be rendered from this server page.
 
   return (
     <div className="bg-background min-h-screen">
@@ -56,112 +84,43 @@ export default async function ShopPage({
           backgroundRepeat: 'repeat'
         }}>
         <div className="container mx-auto">
-          <div className="flex justify-between items-center mb-4">
-            <h1 className="text-2xl font-bold">Nib'era Gebeya</h1>
-            <div className="relative flex-1 max-w-lg">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-              <Input
-                placeholder="What are you looking for..."
-                className="pl-10 bg-white text-black"
-              />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center justify-between sm:justify-start gap-3">
+              <h1 className="text-2xl font-bold">Shop</h1>
+              <Button asChild variant="ghost" size="sm" className="h-10 px-0">
+                <Link href={ordersHref} className="inline-flex items-center gap-2 px-3 py-2 text-primary-foreground hover:bg-primary/20 rounded-md">
+                  <ShoppingCart className="h-4 w-4" />
+                  <span>Orders</span>
+                </Link>
+              </Button>
             </div>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <Button variant="ghost" className="text-white hover:bg-white/20">
-              <Menu className="mr-2 h-5 w-5" />
-              Menu
-            </Button>
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" className="text-white hover:bg-white/20">
-                <User className="mr-1 h-5 w-5" />
-                Log in
-              </Button>
-              <Button variant="ghost" className="text-white hover:bg-white/20">
-                <Heart className="mr-1 h-5 w-5" />
-                Wishlist
-              </Button>
-              <Button variant="ghost" className="text-white hover:bg-white/20">
-                <ShoppingBasket className="mr-1 h-5 w-5" />
-                Basket
-              </Button>
+
+            <div className="w-full sm:max-w-2xl">
+              <ShopHeaderSearchClient
+                initialQ={query ?? ''}
+                initialCategoryId={categoryId ?? ''}
+                categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                borrowerId={borrowerId}
+              />
             </div>
           </div>
         </div>
       </header>
       
-      <main className="container mx-auto py-8 space-y-12">
-        {/* Top Merchants */}
-        <section>
-          <h2 className="text-2xl font-bold mb-4 text-center">Top Merchants</h2>
-           <Carousel
-            opts={{
-              align: "start",
-              loop: true,
-            }}
-            className="w-full"
-          >
-            <CarouselContent>
-              {merchants.map((merchant, index) => (
-                <CarouselItem key={index} className="md:basis-1/3 lg:basis-1/4">
-                  <div className="p-1">
-                    <Card className="overflow-hidden">
-                      <CardContent className="flex flex-col items-center justify-center p-6 space-y-2">
-                        <div className="h-32 w-32 flex items-center justify-center bg-muted rounded-lg">
-                           <p className="font-bold text-lg text-center p-2">{merchant.name}</p>
-                        </div>
-                        <p className="text-sm font-medium">{merchant.name}</p>
-                      </CardContent>
-                    </Card>
-                  </div>
-                </CarouselItem>
-              ))}
-            </CarouselContent>
-          </Carousel>
-        </section>
+      <main className="container mx-auto py-8 px-4 sm:px-6 lg:px-8 space-y-12">
+        {/* Top Merchants removed */}
 
         {/* Latest Products */}
         <section>
           <h2 className="text-2xl font-bold mb-4 text-center">Latest Products</h2>
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((item) => {
-              const href = borrowerId
-                ? `/shop/${encodeURIComponent(item.id)}?borrowerId=${encodeURIComponent(borrowerId)}`
-                : `/shop/${encodeURIComponent(item.id)}`;
-              
-              const discount = item.discountRules?.[0];
-
-              return (
-                <Card key={item.id} className="overflow-hidden group flex flex-col">
-                   <div className="relative overflow-hidden">
-                    <Link href={href}>
-                        <img 
-                            src={item.imageUrl ?? `https://placehold.co/600x400/eee/ccc?text=${encodeURIComponent(item.name)}`} 
-                            alt={item.name} 
-                            className="w-full h-48 object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                    </Link>
-                    {discount && (
-                       <div className="absolute top-2 left-2 flex gap-1">
-                        {discount.type === 'percentage' && <Badge className="bg-red-500 text-white">-{discount.value}%</Badge>}
-                        <Badge variant="secondary">Discount</Badge>
-                       </div>
-                    )}
-                  </div>
-                  <CardHeader className="pt-4 pb-2">
-                    <CardTitle className="text-base truncate">{item.name}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="flex-grow flex flex-col justify-end">
-                    <div className="flex items-center justify-between gap-4 mt-auto">
-                      <div className="font-semibold text-sm">{formatCurrency(item.price)}</div>
-                      <Button asChild size="sm" style={{backgroundColor: '#FDB913', color: 'black'}}>
-                        <Link href={href}>Select</Link>
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+          <ShopSearchClient
+            initialItems={serializedItems}
+            categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+            borrowerId={borrowerId}
+            hideControls
+            initialQ={query ?? ''}
+            initialCategoryId={categoryId ?? ''}
+          />
           {items.length === 0 && (
             <Card>
               <CardHeader>

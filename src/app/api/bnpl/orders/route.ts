@@ -13,10 +13,21 @@ export async function GET(req: NextRequest) {
     const orders = await prisma.order.findMany({
       where: { borrowerId },
       include: {
-        merchant: true,
-        items: { include: { item: { include: { category: true } } } },
-        loanApplication: { include: { product: { include: { provider: true } } } },
-        loan: true,
+        merchant: { select: { id: true, name: true } },
+        items: {
+          select: {
+            quantity: true,
+            lineTotal: true,
+            item: {
+              select: {
+                id: true,
+                name: true,
+                imageUrl: true,
+              },
+            },
+          },
+        },
+        loan: { select: { id: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
