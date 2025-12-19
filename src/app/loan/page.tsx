@@ -215,8 +215,8 @@ export default async function LoanPage({ searchParams }: { searchParams: any }) 
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                     {items.map((item) => {
                         const href = borrowerId
-                            ? `/loan?borrowerId=${encodeURIComponent(borrowerId)}&itemId=${encodeURIComponent(item.id)}&qty=1`
-                            : `/loan?itemId=${encodeURIComponent(item.id)}&qty=1`;
+                            ? `/shop/${encodeURIComponent(item.id)}?borrowerId=${encodeURIComponent(borrowerId)}`
+                            : `/shop/${encodeURIComponent(item.id)}`;
 
                         return (
                             <Card key={item.id}>

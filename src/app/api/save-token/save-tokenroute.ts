@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
     }
 
     // ✅ Create a redirect response
-    const redirectUrl = new URL(`/loan?borrowerId=${borrowerId}`, req.url);
+    const redirectUrl = new URL(`/shop?borrowerId=${borrowerId}`, req.url);
     const response = NextResponse.redirect(redirectUrl);
 
     // ✅ Set secure, HTTP-only cookie
