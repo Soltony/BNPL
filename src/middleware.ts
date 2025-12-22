@@ -3,9 +3,35 @@ import { decryptJwt } from '@/lib/session';
 import { allMenuItems } from './lib/menu-items';
 import type { Permissions } from '@/lib/types';
 
+function pathMatchesPrefix(path: string, prefix: string) {
+  if (path === prefix) return true;
+  if (prefix === '/') return true;
+  return path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`);
+}
+
+function findBestMenuItemMatch(path: string) {
+  let best: (typeof allMenuItems)[number] | undefined;
+  let bestLen = -1;
+  for (const item of allMenuItems) {
+    if (pathMatchesPrefix(path, item.path) && item.path.length > bestLen) {
+      best = item;
+      bestLen = item.path.length;
+    }
+  }
+  return best;
+}
+
+function computeFirstAllowedPage(userPermissions: Set<string>, permissionMap: Record<string, string>, orderedPages: string[]) {
+  for (const pagePath of orderedPages) {
+    const perm = permissionMap[pagePath];
+    if (perm && userPermissions.has(perm.toLowerCase())) return pagePath;
+  }
+  return null;
+}
+
 // Helper: resolve allowed roles for a given path
 function getAllowedRolesForPath(path: string): string[] | undefined {
-  const route = allMenuItems.find(item => path.startsWith(item.path));
+  const route = findBestMenuItemMatch(path);
   const maybe = (route as any)?.allowedRoles;
   if (Array.isArray(maybe) && maybe.length > 0) return maybe.map((r: any) => String(r));
 
@@ -75,6 +101,8 @@ export const config = {
 export default async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
+  const requestId = req.headers.get('x-request-id') || req.cookies.get('rid')?.value || self.crypto.randomUUID();
+
   // Generate nonce
   const nonce = btoa(self.crypto.randomUUID());
 
@@ -100,8 +128,10 @@ export default async function middleware(req: NextRequest) {
   const requestHeaders = new Headers(req.headers);
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', cspHeader);
+  requestHeaders.set('x-request-id', requestId);
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
+  response.headers.set('x-request-id', requestId);
 
   // ----------------------------------------
   // START ACCESS CONTROL ENFORCEMENT
@@ -153,6 +183,12 @@ export default async function middleware(req: NextRequest) {
 
     const session = await sessionResp.json();
 
+    // If the user is already on the forbidden page, allow rendering it without
+    // additional permission redirects to avoid redirect loops.
+    if (path === '/admin/forbidden') {
+      return withSecurityHeaders(response, cspHeader, nonce);
+    }
+
     // Force password change
     if (session.passwordChangeRequired &&
         path !== '/admin/change-password' &&
@@ -189,7 +225,17 @@ export default async function middleware(req: NextRequest) {
       }
     }
 
-    const currentRouteConfig = allMenuItems.find(item => path.startsWith(item.path));
+    const firstAllowedPage = computeFirstAllowedPage(userPermissions, PERMISSION_MAP, ORDERED_ADMIN_PAGES);
+
+    const currentRouteConfig = findBestMenuItemMatch(path);
+
+    console.debug('[middleware]', {
+      requestId,
+      path,
+      role: session?.role,
+      firstAllowedPage,
+      matchedMenuPath: currentRouteConfig?.path,
+    });
 
     // Permission enforcement (non-super-admin)
     const isSuperAdmin = session?.role === 'Super Admin';
@@ -199,18 +245,13 @@ export default async function middleware(req: NextRequest) {
       let longestMatch = '';
 
       for (const [prefix, perm] of Object.entries(PERMISSION_MAP)) {
-        if (path.startsWith(prefix) && prefix.length >= longestMatch.length) {
+        if (pathMatchesPrefix(path, prefix) && prefix.length >= longestMatch.length) {
           longestMatch = prefix;
           requiredPermission = perm;
         }
       }
 
       if (requiredPermission && !userPermissions.has(requiredPermission.toLowerCase())) {
-        const firstAllowedPage = ORDERED_ADMIN_PAGES.find(pagePath => {
-          const perm = PERMISSION_MAP[pagePath];
-          return perm && userPermissions.has(perm.toLowerCase());
-        });
-
         if (path.startsWith('/api/')) {
           return withSecurityHeaders(
             NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
@@ -219,7 +260,14 @@ export default async function middleware(req: NextRequest) {
           );
         }
 
-        const redirectUrl = new URL(firstAllowedPage || '/admin', req.nextUrl.origin);
+        // Redirect to the first allowed page; if user has no allowed pages,
+        // send them to /admin/forbidden (not /admin) to avoid redirect loops.
+        const target = firstAllowedPage || '/admin/forbidden';
+        if (target === path) {
+          return withSecurityHeaders(response, cspHeader, nonce);
+        }
+
+        const redirectUrl = new URL(target, req.nextUrl.origin);
         redirectUrl.searchParams.set('error', 'Access Denied');
 
         return withSecurityHeaders(
@@ -271,18 +319,19 @@ export default async function middleware(req: NextRequest) {
           );
         }
 
-        return withSecurityHeaders(
-          NextResponse.redirect(new URL('/admin', req.nextUrl.origin)),
-          cspHeader,
-          nonce
-        );
+        const target = firstAllowedPage || '/admin/forbidden';
+        if (target === path) {
+          return withSecurityHeaders(response, cspHeader, nonce);
+        }
+
+        return withSecurityHeaders(NextResponse.redirect(new URL(target, req.nextUrl.origin)), cspHeader, nonce);
       }
     } else if (path !== '/admin' && !path.startsWith('/api/')) {
-      return withSecurityHeaders(
-        NextResponse.redirect(new URL('/admin', req.nextUrl.origin)),
-        cspHeader,
-        nonce
-      );
+      // Unknown admin route: route them to their first allowed page if possible.
+      const target = firstAllowedPage || '/admin/forbidden';
+      if (target !== path) {
+        return withSecurityHeaders(NextResponse.redirect(new URL(target, req.nextUrl.origin)), cspHeader, nonce);
+      }
     }
   }
 

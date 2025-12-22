@@ -14,22 +14,27 @@ import type { getCurrentUser } from '@/lib/session';
 // Define a user type that matches the structure returned by getUserFromSession
 export type AuthenticatedUser = Awaited<ReturnType<typeof getUserFromSession>>;
 
+export type LoginResult = {
+  redirectTo?: string;
+  requestId?: string;
+};
+
 interface AuthContextType {
   currentUser: AuthenticatedUser | null;
   setCurrentUser: (user: AuthenticatedUser | null) => void;
-  login: (phoneNumber: string, password: string) => Promise<void>;
+  login: (phoneNumber: string, password: string) => Promise<LoginResult>;
   logout: () => Promise<void>;
   isLoading: boolean;
-  refetchUser: () => void;
+  refetchUser: (requestId?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   setCurrentUser: () => {},
-  login: async () => {},
+  login: async () => ({}),
   logout: async () => {},
   isLoading: true,
-  refetchUser: () => {},
+  refetchUser: async () => {},
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -54,9 +59,13 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
   const login = useCallback(
     async (phoneNumber: string, password: string) => {
       setIsLoading(true);
+      const requestId = globalThis.crypto?.randomUUID?.() || String(Date.now());
       const response = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'x-request-id': requestId,
+        },
         body: JSON.stringify({phoneNumber, password}),
       });
 
@@ -92,14 +101,26 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
         (err as any).retriesLeft = errorData.retriesLeft;
         (err as any).delaySeconds = errorData.delaySeconds;
         (err as any).retryAfter = errorData.retryAfter;
+        (err as any).requestId = errorData.requestId || requestId;
         throw err;
       }
 
+      const data = await response.json().catch(() => ({} as any));
+      const serverRequestId = data?.requestId || response.headers.get('x-request-id') || requestId;
+      const redirectTo = data?.redirectTo;
+
+      console.debug('[client.login]', {
+        requestId: serverRequestId,
+        redirectTo,
+      });
+
       // After successful login, refetch user data to update context
       // This MUST be awaited to ensure the session is updated before redirection.
-      await refetchUser();
+      await refetchUser(serverRequestId);
       
       setIsLoading(false);
+
+      return { redirectTo, requestId: serverRequestId };
     },
     []
   );
@@ -114,10 +135,13 @@ export const AuthProvider = ({ children, initialUser = null }: AuthProviderProps
     }
   }, []);
   
-  const refetchUser = useCallback(async () => {
+  const refetchUser = useCallback(async (requestId?: string) => {
     try {
       setIsLoading(true);
-      const userRes = await fetch('/api/auth/user');
+      const userRes = await fetch('/api/auth/user', {
+        headers: requestId ? { 'x-request-id': requestId } : undefined,
+        cache: 'no-store',
+      });
       if (userRes.ok) {
         const user = await userRes.json();
         setCurrentUser(user);

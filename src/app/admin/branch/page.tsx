@@ -5,6 +5,7 @@ import { useRequirePermission } from '@/hooks/use-require-permission';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
+import { postPendingChange } from '@/lib/fetch-utils';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -103,8 +104,8 @@ export default function BranchPage() {
       setLoadingUsers(true);
       const res = await fetch('/api/admin/merchant-users');
       if (!res.ok) throw new Error('Failed to load merchant users');
-      const data = await res.json();
-      setMerchantUsers(data.data || []);
+      const data = await res.json().catch(() => null);
+      setMerchantUsers(data?.data || data || []);
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to load merchant users', variant: 'destructive' });
     } finally {
@@ -115,6 +116,14 @@ export default function BranchPage() {
   const createMerchantUser = async () => {
     try {
       const payload = { fullName: newUserName, email: newUserEmail || null, phone: newUserPhone || null, password: newUserPassword || undefined, merchantId: newUserMerchantId || undefined };
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', changeType: 'CREATE', payload: JSON.stringify({ created: { type: 'MerchantUser', data: payload } }) }, 'Failed to submit merchant user for approval');
+        toast({ title: 'Submitted', description: 'Merchant user submitted for approval.' });
+        setNewUserName(''); setNewUserEmail(''); setNewUserPhone(''); setNewUserPassword(''); setNewUserMerchantId('');
+        return;
+      }
+
       const res = await fetch('/api/admin/merchant-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,6 +141,13 @@ export default function BranchPage() {
 
   const deleteMerchantUser = async (id: string) => {
     try {
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'MerchantUser', id } }) }, 'Failed to submit merchant user removal for approval');
+        toast({ title: 'Submitted', description: 'Merchant user removal submitted for approval.' });
+        return;
+      }
+
       const res = await fetch(`/api/admin/merchant-users?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete');
@@ -224,6 +240,14 @@ export default function BranchPage() {
       const body = editingMerchant
         ? { id: editingMerchant.id, name: merchantName, status: merchantStatus }
         : { name: merchantName, status: merchantStatus };
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        const changeType = editingMerchant ? 'UPDATE' : 'CREATE';
+        await postPendingChange({ entityType: 'Branch', entityId: editingMerchant?.id, changeType, payload: JSON.stringify({ created: !editingMerchant ? { type: 'Merchant', data: body } : undefined, updated: editingMerchant ? { type: 'Merchant', data: body } : undefined }) }, 'Failed to submit merchant for approval');
+        toast({ title: 'Submitted', description: 'Merchant saved and submitted for approval.' });
+        setMerchantDialogOpen(false);
+        return;
+      }
 
       const res = await fetch('/api/admin/merchants', {
         method,
@@ -244,6 +268,13 @@ export default function BranchPage() {
 
   const deleteMerchant = async (id: string) => {
     try {
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'Merchant', id } }) }, 'Failed to submit merchant deletion for approval');
+        toast({ title: 'Submitted', description: 'Merchant deletion submitted for approval.' });
+        return;
+      }
+
       const res = await fetch(`/api/admin/merchants?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete merchant');
@@ -274,6 +305,14 @@ export default function BranchPage() {
       const body = editingCategory
         ? { id: editingCategory.id, name: categoryName, status: categoryStatus }
         : { name: categoryName, status: categoryStatus };
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        const changeType = editingCategory ? 'UPDATE' : 'CREATE';
+        await postPendingChange({ entityType: 'Branch', entityId: editingCategory?.id, changeType, payload: JSON.stringify({ created: !editingCategory ? { type: 'ProductCategory', data: body } : undefined, updated: editingCategory ? { type: 'ProductCategory', data: body } : undefined }) }, 'Failed to submit category for approval');
+        toast({ title: 'Submitted', description: 'Category saved and submitted for approval.' });
+        setCategoryDialogOpen(false);
+        return;
+      }
 
       const res = await fetch('/api/admin/product-categories', {
         method,
@@ -294,6 +333,13 @@ export default function BranchPage() {
 
   const deleteCategory = async (id: string) => {
     try {
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'ProductCategory', id } }) }, 'Failed to submit category deletion for approval');
+        toast({ title: 'Submitted', description: 'Category deletion submitted for approval.' });
+        return;
+      }
+
       const res = await fetch(`/api/admin/product-categories?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete category');
@@ -332,6 +378,14 @@ export default function BranchPage() {
         contactInfo: locationContactInfo.trim() ? locationContactInfo.trim() : null,
       };
       if (editingLocation) payload.id = editingLocation.id;
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        const changeType = editingLocation ? 'UPDATE' : 'CREATE';
+        await postPendingChange({ entityType: 'Branch', entityId: editingLocation?.id, changeType, payload: JSON.stringify({ created: !editingLocation ? { type: 'StockLocation', data: payload } : undefined, updated: editingLocation ? { type: 'StockLocation', data: payload } : undefined }) }, 'Failed to submit stock location for approval');
+        toast({ title: 'Submitted', description: 'Stock location saved and submitted for approval.' });
+        setLocationDialogOpen(false);
+        return;
+      }
 
       const res = await fetch('/api/admin/stock-locations', {
         method,
@@ -350,6 +404,13 @@ export default function BranchPage() {
 
   const deleteLocation = async (id: string) => {
     try {
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'StockLocation', id } }) }, 'Failed to submit stock location deletion for approval');
+        toast({ title: 'Submitted', description: 'Stock location deletion submitted for approval.' });
+        return;
+      }
+
       const res = await fetch(`/api/admin/stock-locations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete location');
@@ -402,6 +463,15 @@ export default function BranchPage() {
       };
       if (editingInventory) payload.id = editingInventory.id;
 
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        const changeType = editingInventory ? 'UPDATE' : 'CREATE';
+        await postPendingChange({ entityType: 'Branch', entityId: editingInventory?.id, changeType, payload: JSON.stringify({ created: !editingInventory ? { type: 'InventoryLevel', data: payload } : undefined, updated: editingInventory ? { type: 'InventoryLevel', data: payload } : undefined }) }, 'Failed to submit inventory change for approval');
+        toast({ title: 'Submitted', description: 'Inventory change submitted for approval.' });
+        setInventoryDialogOpen(false);
+        return;
+      }
+
       const res = await fetch('/api/admin/inventory-levels', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -420,6 +490,13 @@ export default function BranchPage() {
 
   const deleteInventory = async (id: string) => {
     try {
+      const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+      if (!canApprove) {
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'InventoryLevel', id } }) }, 'Failed to submit inventory deletion for approval');
+        toast({ title: 'Submitted', description: 'Inventory deletion submitted for approval.' });
+        return;
+      }
+
       const res = await fetch(`/api/admin/inventory-levels?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.error || 'Failed to delete inventory');

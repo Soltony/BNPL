@@ -7,10 +7,12 @@ import type { User as AuthUser, Permissions } from '@/lib/types';
 
 
 export async function GET(req: NextRequest) {
+  const requestId = req.headers.get('x-request-id') || 'n/a';
   try {
     const session = await getSession();
 
     if (!session?.userId) {
+      console.debug('[auth.user]', { requestId, ok: false });
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
@@ -35,11 +37,15 @@ export async function GET(req: NextRequest) {
       permissions: JSON.parse(user.role.permissions as string) as Permissions,
     };
 
-
-    return NextResponse.json(authUser, { status: 200 });
+    console.debug('[auth.user]', { requestId, ok: true, userId: authUser.id, role: authUser.role });
+    const res = NextResponse.json(authUser, { status: 200 });
+    res.headers.set('x-request-id', requestId);
+    return res;
 
   } catch (error) {
-    console.error('Get User Error:', error);
-    return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
+    console.error('[auth.user] error', { requestId, error });
+    const res = NextResponse.json({ error: 'An internal server error occurred.', requestId }, { status: 500 });
+    res.headers.set('x-request-id', requestId);
+    return res;
   }
 }

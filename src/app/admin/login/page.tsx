@@ -33,15 +33,51 @@ export default function AdminLoginPage() {
   
   const nibBankColor = '#fdb913';
 
+  const waitForSession = async (requestId?: string, timeoutMs: number = 5000) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      try {
+        const res = await fetch('/api/auth/session', {
+          headers: requestId ? { 'x-request-id': requestId } : undefined,
+          cache: 'no-store',
+        });
+        if (res.ok) return true;
+      } catch {
+        // ignore transient network / navigation races
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return false;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
     setLockSeconds(0);
     try {
-      await login(phoneNumber, password);
-      router.push('/admin');
-      router.refresh(); // This is important to re-fetch server-side data
+      const { redirectTo, requestId } = await login(phoneNumber, password);
+
+      // Wait briefly for the session cookies/rotation to be visible to middleware.
+      await waitForSession(requestId, 5000);
+
+      // Prevent repeated redirects for the same request id.
+      if (requestId) {
+        const last = sessionStorage.getItem('bnpl:lastLoginRid');
+        if (last === requestId) {
+          console.debug('[client.login] suppress duplicate redirect', { requestId });
+        } else {
+          sessionStorage.setItem('bnpl:lastLoginRid', requestId);
+        }
+      }
+
+      // Prefer server-provided first allowed page. If absent, go to /admin and let middleware decide.
+      const target = redirectTo || '/admin';
+
+      console.debug('[client.login] navigate', { requestId, target });
+
+      router.replace(target);
+      router.refresh();
       toast({
         title: 'Login Successful',
         description: 'Welcome back!',

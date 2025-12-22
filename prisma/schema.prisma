@@ -27,6 +27,10 @@ model User {
   sessions               Session[]
   loanProviderId         String?
   loanProvider           LoanProvider?   @relation(fields: [loanProviderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  districtId             String?
+  district               District?       @relation(fields: [districtId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  branchId               String?
+  branch                 Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   merchantId             String?
   merchant               Merchant?       @relation(fields: [merchantId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   createdChanges         PendingChange[] @relation("CreatedBy")
@@ -35,6 +39,28 @@ model User {
   updatedAt              DateTime        @updatedAt
 
   @@index([merchantId])
+}
+
+model District {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  branches  Branch[]
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Branch {
+  id         String   @id @default(cuid())
+  name       String
+  districtId String
+  district   District @relation(fields: [districtId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users      User[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([districtId, name])
+  @@index([districtId])
 }
 
 model Role {

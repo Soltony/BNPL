@@ -6,8 +6,21 @@ import { createSession } from '@/lib/session';
 import { createAuditLog } from '@/lib/audit-log';
 import { validateBody, loginSchema } from '@/lib/validators';
 import { isBlocked, recordFailedAttempt, resetAttempts, getRemainingAttempts, getBackoffSeconds, getLockRemainingMs, MAX_ATTEMPTS, WINDOW_MS } from '@/lib/rate-limiter';
+import { allMenuItems } from '@/lib/menu-items';
+import type { Permissions } from '@/lib/types';
+import { randomUUID } from 'crypto';
+
+function computeFirstAllowedPage(permissions: Permissions | null | undefined): string | null {
+  if (!permissions) return null;
+  for (const item of allMenuItems) {
+    const moduleKey = item.label.toLowerCase().replace(/\s+/g, '-');
+    if (permissions?.[moduleKey]?.read) return item.path;
+  }
+  return null;
+}
 
 export async function POST(req: NextRequest) {
+  const requestId = req.headers.get('x-request-id') || randomUUID();
   const ipAddress = req.ip || req.headers.get('x-forwarded-for') || 'N/A';
   const userAgent = req.headers.get('user-agent') || 'N/A';
 
@@ -118,6 +131,25 @@ export async function POST(req: NextRequest) {
     // Create a session for the user and include their role permissions so
     // middleware (Edge runtime) can read permissions without a DB call.
     await createSession(user.id, undefined, user.role.permissions);
+
+    const parsedPermissions = (() => {
+      try {
+        return JSON.parse(user.role.permissions as string) as Permissions;
+      } catch {
+        return null;
+      }
+    })();
+
+    const redirectTo = user.passwordChangeRequired
+      ? '/admin/change-password'
+      : (computeFirstAllowedPage(parsedPermissions) || '/admin/forbidden');
+
+    console.debug('[auth.login]', {
+      requestId,
+      userId: user.id,
+      role: user.role.name,
+      redirectTo,
+    });
     
     const logDetails = {
         role: user.role.name,
@@ -130,10 +162,16 @@ export async function POST(req: NextRequest) {
         details: logDetails
     });
 
-    return NextResponse.json({ message: 'Login successful' }, { status: 200 });
+    const res = NextResponse.json({ message: 'Login successful', redirectTo, requestId }, { status: 200 });
+    res.headers.set('x-request-id', requestId);
+    // Short-lived correlation cookie so middleware can log the same id.
+    res.cookies.set('rid', requestId, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: 60 * 10 });
+    return res;
 
   } catch (error) {
-    console.error('Login Error:', error);
-    return NextResponse.json({ error: 'An internal server error occurred.' }, { status: 500 });
+    console.error('[auth.login] error', { requestId, error });
+    const res = NextResponse.json({ error: 'An internal server error occurred.', requestId }, { status: 500 });
+    res.headers.set('x-request-id', requestId);
+    return res;
   }
 }

@@ -225,6 +225,10 @@ export interface User {
     providerId?: string | null;
     merchantId?: string | null;
     providerName?: string;
+    districtId?: string | null;
+    branchId?: string | null;
+    districtName?: string | null;
+    branchName?: string | null;
     permissions: Permissions;
 }
 

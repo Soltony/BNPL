@@ -70,6 +70,26 @@ const ChangeDetailsDialog = ({
     try {
         const { original, updated, created } = JSON.parse(change.payload);
 
+        // Helper to unwrap Branch-style payloads which have shape: { type: string, data: {...} }
+        const unwrapBranchPayload = (obj: any) => {
+          if (!obj || typeof obj !== 'object') return obj;
+          // If the object looks like a branch wrapper, return the inner data merged with type
+          if (obj.type && obj.data && typeof obj.data === 'object') {
+            return { __type: obj.type, ...obj.data };
+          }
+          return obj;
+        };
+
+        // For Branch entities, the created/updated/original objects are wrappers; unwrap them
+        let parsedOriginal = original;
+        let parsedUpdated = updated;
+        let parsedCreated = created;
+        if (change.entityType === 'Branch') {
+          parsedOriginal = unwrapBranchPayload(original);
+          parsedUpdated = unwrapBranchPayload(updated);
+          parsedCreated = unwrapBranchPayload(created);
+        }
+
         const formatFieldName = (path: string) => {
             return path
                 .replace(/__/g, ' -> ')
@@ -78,9 +98,12 @@ const ChangeDetailsDialog = ({
         };
 
         if (change.changeType === 'UPDATE') {
+          const before = change.entityType === 'Branch' ? (parsedOriginal || {}) : (original || {});
+          const after = change.entityType === 'Branch' ? (parsedUpdated || {}) : (updated || {});
           // Special-case DataProvisioningConfig updates to give reviewers a
           // concise column-level summary instead of a raw JSON diff.
           if (change.entityType === 'DataProvisioningConfig') {
+            // keep DataProvisioningConfig logic using raw original/updated
             const before = original || {};
             const after = updated || {};
             const details: any[] = [];
@@ -156,7 +179,7 @@ const ChangeDetailsDialog = ({
             return { added, removed, updated: updatedCount, details };
           }
 
-          const diff = showDiff(original, updated, { full: true, keepUnchangedValues: false });
+            const diff = showDiff(before, after, { full: true, keepUnchangedValues: false });
             const fields = { added: 0, removed: 0, updated: 0, details: [] as any[] };
 
             const flattenDiff = (obj: any, path: string = ''): any[] => {
@@ -171,8 +194,8 @@ const ChangeDetailsDialog = ({
                     } else if (value && typeof value === 'object' && value.__old !== undefined && value.__new !== undefined) {
                         acc.push({ path: newPath, ...value });
                     } else if (value && typeof value === 'object' && value._t === 'a') {
-                        // Handle array diffs
-                        acc.push({path: newPath, __old: original[key], __new: updated[key]});
+                      // Handle array diffs
+                      acc.push({path: newPath, __old: before[key], __new: after[key]});
                     }
                     else if (typeof value === 'object' && value !== null) {
                         acc.push(...flattenDiff(value, newPath));
@@ -229,6 +252,14 @@ const ChangeDetailsDialog = ({
             return { added: details.length, removed: 0, updated: 0, details };
           }
 
+          // If this is a Branch create that we unwrapped above, prefer showing the inner fields
+          if (change.entityType === 'Branch' && parsedCreated && typeof parsedCreated === 'object') {
+            return {
+              added: Object.keys(parsedCreated).length, removed: 0, updated: 0,
+              details: Object.entries(parsedCreated).map(([key, value]) => ({ field: formatFieldName(key), after: value, type: 'added' }))
+            };
+          }
+
           return {
             added: Object.keys(created).length, removed: 0, updated: 0,
             details: Object.entries(created).map(([key, value]) => ({ field: formatFieldName(key), after: value, type: 'added' }))
@@ -265,6 +296,14 @@ const ChangeDetailsDialog = ({
             }
 
             return { added: 0, removed: details.length, updated: 0, details };
+          }
+
+          // If Branch deletion, show inner object fields instead of a raw "data" object
+          if (change.entityType === 'Branch' && parsedOriginal && typeof parsedOriginal === 'object') {
+            return {
+              added: 0, removed: Object.keys(parsedOriginal).length, updated: 0,
+              details: Object.entries(parsedOriginal).map(([key, value]) => ({ field: formatFieldName(key), before: value, type: 'removed' }))
+            };
           }
 
           return {

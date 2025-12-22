@@ -47,6 +47,23 @@ import { cn } from '@/lib/utils';
 import { allMenuItems } from '@/lib/menu-items';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
+function pathMatchesPrefix(path: string, prefix: string) {
+  if (path === prefix) return true;
+  return path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`);
+}
+
+function findBestMenuItemMatch(path: string) {
+  let best: (typeof allMenuItems)[number] | undefined;
+  let bestLen = -1;
+  for (const item of allMenuItems) {
+    if (pathMatchesPrefix(path, item.path) && item.path.length > bestLen) {
+      best = item;
+      bestLen = item.path.length;
+    }
+  }
+  return best;
+}
+
 
 // Function to convert hex to HSL
 const hexToHsl = (hex: string): string => {
@@ -121,19 +138,18 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
   // forbidden page to prevent client-side navigation to restricted pages.
   const isCurrentRouteAllowed = React.useMemo(() => {
     if (!currentUser || !currentUser.permissions) return false;
-    const current = allMenuItems.find(item => pathname.startsWith(item.path));
+    const current = findBestMenuItemMatch(pathname);
     if (!current) return true; // allow non-admin menu routes (handled elsewhere)
     const moduleName = current.label.toLowerCase().replace(/\s+/g, '-');
-    return !!currentUser.permissions[moduleName]?.read;
+    const allowed = !!currentUser.permissions[moduleName]?.read;
+    console.debug('[client.permission]', {
+      path: pathname,
+      matchedMenuPath: current.path,
+      moduleName,
+      allowed,
+    });
+    return allowed;
   }, [currentUser, pathname]);
-
-  React.useEffect(() => {
-    if (isLoading) return;
-    if (!currentUser) return;
-    if (!isCurrentRouteAllowed && pathname !== '/admin/forbidden') {
-      router.replace('/admin/forbidden');
-    }
-  }, [isCurrentRouteAllowed, currentUser, isLoading, pathname, router]);
 
   const handleLogout = async () => {
     await logout();
@@ -174,7 +190,7 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
               {menuItems.map((item) => {
                 const children = (item as any).children as undefined | Array<{ path: string; label: string; icon: any }>;
                 const hasChildren = !!children?.length;
-                const isActiveTop = pathname.startsWith(item.path) && (item.path !== '/admin' || pathname === '/admin');
+                const isActiveTop = (item.path === '/admin' ? pathname === '/admin' : pathMatchesPrefix(pathname, item.path));
 
                 if (!hasChildren) {
                   return (
@@ -194,7 +210,7 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
                   );
                 }
 
-                const defaultOpen = pathname.startsWith(item.path);
+                const defaultOpen = pathMatchesPrefix(pathname, item.path);
 
                 return (
                   <Collapsible key={item.label} defaultOpen={defaultOpen}>
@@ -221,7 +237,7 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
                       <CollapsibleContent>
                         <SidebarMenuSub>
                           {children!.map((child) => {
-                            const isActiveChild = pathname.startsWith(child.path);
+                            const isActiveChild = pathMatchesPrefix(pathname, child.path);
                             return (
                               <SidebarMenuSubItem key={child.label}>
                                 <SidebarMenuSubButton asChild isActive={isActiveChild}>

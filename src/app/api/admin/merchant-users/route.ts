@@ -7,8 +7,10 @@ export async function GET() {
   try {
     await requireBranchOrAdminFromRequest();
 
-    const role = await prisma.role.findUnique({ where: { name: 'merchant' } });
-    if (!role) return NextResponse.json({ data: [] });
+    let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+    if (!role) {
+      role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
+    }
 
     const users = await prisma.user.findMany({
       where: { roleId: role.id },
@@ -35,8 +37,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Find merchant role by exact name (ensure a role named 'merchant' exists)
-    const role = await prisma.role.findUnique({ where: { name: 'merchant' } });
-    if (!role) return NextResponse.json({ error: 'Merchant role not found' }, { status: 400 });
+    let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+    if (!role) {
+      role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
+    }
 
     const nowSuffix = Date.now().toString().slice(-6);
     const safeEmail = email || `merchant+${nowSuffix}@example.com`;

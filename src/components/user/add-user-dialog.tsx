@@ -36,6 +36,8 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
     role: 'Loan Provider' as UserRole,
     status: 'Active' as UserStatus,
     providerId: '' as string | null,
+    districtId: '' as string | null,
+    branchId: '' as string | null,
   });
 
   const [pwChecks, setPwChecks] = useState({
@@ -65,6 +67,8 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
         role: user.role,
         status: user.status,
         providerId: user.providerId || null,
+        districtId: (user as any).districtId || null,
+        branchId: (user as any).branchId || null,
       });
     } else {
       setFormData({
@@ -75,6 +79,8 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
         role: defaultRole as UserRole,
         status: 'Active' as UserStatus,
         providerId: providers.length > 0 ? providers[0].id : null,
+        districtId: null,
+        branchId: null,
       });
     }
   }, [user, isOpen, providers, roles]);
@@ -205,11 +211,31 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
         submissionData.providerId = null;
     }
 
+    // districtId and branchId will be sent to the server when applicable
+
     onSave(submissionData);
     onClose();
   };
   
   const isProviderRole = formData.role === 'Loan Provider' || formData.role === 'Loan Manager';
+  const isBranchRole = String(formData.role).toLowerCase() === 'branch';
+
+  const [districts, setDistricts] = useState<Array<any>>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch('/api/districts');
+        if (!res.ok) throw new Error('Failed to load districts');
+        const data = await res.json();
+        setDistricts(data || []);
+      } catch (e) {
+        console.error('Failed to load districts', e);
+        setDistricts([]);
+      }
+    };
+    if (isOpen) load();
+  }, [isOpen]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -316,6 +342,36 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
                 </Select>
              </div>
           )}
+          {isBranchRole && (
+            <>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="district" className="text-right">District</Label>
+                <Select onValueChange={(v) => setFormData(prev => ({ ...prev, districtId: v }))} value={formData.districtId || ''}>
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select a district" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {districts.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="branch" className="text-right">Branch</Label>
+                <Select onValueChange={(v) => setFormData(prev => ({ ...prev, branchId: v }))} value={formData.branchId || ''}>
+                  <SelectTrigger className="col-span-3">
+                    <SelectValue placeholder="Select a branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(districts.find(d => d.id === formData.districtId)?.branches || []).map((b: any) => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          )}
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="status" className="text-right">
               Status
@@ -338,7 +394,7 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
             </DialogClose>
             <Button type="submit" disabled={
               ( !user && !formData.password ) ||
-              (formData.password && (!pwChecks.length || !pwChecks.lower || !pwChecks.upper || !pwChecks.number || !pwChecks.symbol || pwChecks.common || pwned === true || pwnedLoading))
+              (!!formData.password && (!pwChecks.length || !pwChecks.lower || !pwChecks.upper || !pwChecks.number || !pwChecks.symbol || pwChecks.common || pwned === true || pwnedLoading))
             } style={{ backgroundColor: primaryColor }} className="text-white">
               {user ? 'Save Changes' : 'Add User'}
             </Button>

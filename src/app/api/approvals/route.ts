@@ -10,6 +10,7 @@ import { z, ZodError } from 'zod';
 import { validationErrorResponse, handleApiError } from '@/lib/error-utils';
 import { createAuditLog } from '@/lib/audit-log';
 import ExcelJS from 'exceljs';
+import bcrypt from 'bcryptjs';
 import { toCamelCase } from '@/lib/utils';
 import { Prisma } from '@prisma/client';
 
@@ -335,6 +336,90 @@ async function applyChange(change: any) {
 
                 await tx.loanProvider.delete({ where: { id: entityId } });
             });
+        }
+      break;
+    case 'Branch':
+        // Branch is used as a wrapper for several admin sub-entities (Merchant, MerchantUser, ProductCategory, StockLocation, InventoryLevel)
+        // Payload shape expected: { created?: { type: string, data: any }, updated?: { type: string, data: any }, original?: { type: string, id?: string } }
+        {
+            const inner = data.created || data.updated || data.original || {};
+            const subtype = inner.type || (typeof inner === 'string' ? inner : null);
+            const payloadData = inner.data || inner;
+
+            if (!subtype) {
+                throw new Error('Missing subtype for Branch change');
+            }
+
+            switch (subtype) {
+                case 'Merchant':
+                    if (changeType === 'CREATE') {
+                        await prisma.merchant.create({ data: payloadData });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.merchant.update({ where: { id: entityId! }, data: payloadData });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.merchant.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'ProductCategory':
+                    if (changeType === 'CREATE') {
+                        await prisma.productCategory.create({ data: payloadData });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.productCategory.update({ where: { id: entityId! }, data: payloadData });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.productCategory.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'StockLocation':
+                    if (changeType === 'CREATE') {
+                        await prisma.stockLocation.create({ data: payloadData });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.stockLocation.update({ where: { id: entityId! }, data: payloadData });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.stockLocation.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'InventoryLevel':
+                    // payloadData may use variantId or itemId; map variantId -> itemId if needed
+                    const invData: any = { ...payloadData };
+                    if (!invData.itemId && invData.variantId) {
+                        invData.itemId = invData.variantId;
+                        delete invData.variantId;
+                    }
+                    if (changeType === 'CREATE') {
+                        await prisma.inventoryLevel.create({ data: { itemId: invData.itemId, locationId: invData.locationId, quantityAvailable: invData.quantityAvailable, reservedQuantity: invData.reservedQuantity ?? 0, lowStockThreshold: invData.lowStockThreshold ?? undefined } });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.inventoryLevel.update({ where: { id: entityId! }, data: { itemId: invData.itemId, locationId: invData.locationId, quantityAvailable: invData.quantityAvailable, reservedQuantity: invData.reservedQuantity ?? 0, lowStockThreshold: invData.lowStockThreshold ?? null } });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.inventoryLevel.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'MerchantUser':
+                    if (changeType === 'CREATE') {
+                        // create a user with role 'merchant'
+                        const info = payloadData || {};
+                        let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+                        if (!role) {
+                            // ensure a merchant role exists to avoid hard failures during approvals
+                            role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
+                        }
+
+                        const nowSuffix = Date.now().toString().slice(-6);
+                        const safeEmail = info.email || `merchant+${nowSuffix}@example.com`;
+                        const safePhone = info.phone || `000${nowSuffix}`;
+                        const rawPassword = info.password || Math.random().toString(36).slice(2, 10);
+                        const hashed = await bcrypt.hash(rawPassword, 10);
+
+                        await prisma.user.create({ data: { fullName: info.fullName, email: safeEmail, phoneNumber: safePhone, password: hashed, passwordChangeRequired: true, status: 'Active', roleId: role.id, merchantId: info.merchantId ?? undefined } });
+                    } else if (changeType === 'UPDATE') {
+                        const info = payloadData || {};
+                        await prisma.user.update({ where: { id: entityId! }, data: { fullName: info.fullName, email: info.email, phoneNumber: info.phone } });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.user.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                default:
+                    throw new Error(`Unknown branch subtype for approval: ${subtype}`);
+            }
         }
       break;
     case 'LoanProduct':

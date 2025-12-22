@@ -41,6 +41,23 @@ import type { LoanProvider } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { allMenuItems } from '@/lib/menu-items';
 
+function pathMatchesPrefix(path: string, prefix: string) {
+  if (path === prefix) return true;
+  return path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`);
+}
+
+function findBestMenuItemMatch(path: string) {
+  let best: (typeof allMenuItems)[number] | undefined;
+  let bestLen = -1;
+  for (const item of allMenuItems) {
+    if (pathMatchesPrefix(path, item.path) && item.path.length > bestLen) {
+      best = item;
+      bestLen = item.path.length;
+    }
+  }
+  return best;
+}
+
 
 // Function to convert hex to HSL
 const hexToHsl = (hex: string): string => {
@@ -116,23 +133,18 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
   // from exposing protected pages.
   const isCurrentRouteAllowed = React.useMemo(() => {
     if (!currentUser || !currentUser.permissions) return false;
-    const current = allMenuItems.find(item => pathname.startsWith(item.path));
+    const current = findBestMenuItemMatch(pathname);
     if (!current) return true; // allow non-admin menu routes (handled elsewhere)
     const moduleName = current.label.toLowerCase().replace(/\s+/g, '-');
-    return !!currentUser.permissions[moduleName]?.read;
+    const allowed = !!currentUser.permissions[moduleName]?.read;
+    console.debug('[client.permission]', {
+      path: pathname,
+      matchedMenuPath: current.path,
+      moduleName,
+      allowed,
+    });
+    return allowed;
   }, [currentUser, pathname]);
-
-  // If the user is not allowed to view the current route, perform a client-side
-  // redirect to the shared forbidden page. This prevents typed URLs or client
-  // navigation from exposing pages the user should not access.
-  React.useEffect(() => {
-    if (isLoading) return;
-    if (!currentUser) return;
-    if (!isCurrentRouteAllowed && pathname !== '/admin/forbidden') {
-      // Use replace to avoid adding a history entry the user can go back to.
-      router.replace('/admin/forbidden');
-    }
-  }, [isCurrentRouteAllowed, currentUser, isLoading, pathname, router]);
 
   const handleLogout = async () => {
     await logout();
@@ -174,7 +186,7 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
                 <SidebarMenuItem key={item.label}>
                   <Link href={item.path}>
                     <SidebarMenuButton
-                      isActive={pathname.startsWith(item.path) && (item.path !== '/admin' || pathname === '/admin')}
+                      isActive={(item.path === '/admin' ? pathname === '/admin' : pathMatchesPrefix(pathname, item.path))}
                       tooltip={{
                         children: item.label,
                       }}

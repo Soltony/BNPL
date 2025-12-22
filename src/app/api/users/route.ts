@@ -18,6 +18,8 @@ const userSchema = z.object({
   password: z.string().optional(),
   role: z.string(), // Role name, will be connected by ID
   providerId: z.string().nullable().optional(),
+  districtId: z.string().nullable().optional(),
+  branchId: z.string().nullable().optional(),
   status: z.enum(['Active', 'Inactive']),
 });
 
@@ -43,6 +45,8 @@ export async function GET() {
       include: {
         role: true,
         loanProvider: true,
+        district: true,
+        branch: true,
       },
       orderBy: {
         createdAt: 'desc',
@@ -57,6 +61,10 @@ export async function GET() {
       role: user.role.name,
       providerName: user.loanProvider?.name || 'N/A',
       providerId: user.loanProvider?.id,
+      districtId: user.district?.id || null,
+      districtName: user.district?.name || null,
+      branchId: user.branch?.id || null,
+      branchName: user.branch?.name || null,
       status: user.status,
     }));
 
@@ -87,7 +95,7 @@ export async function POST(req: NextRequest) {
   try {
 
     const body = await req.json();
-    const { password, role: roleName, providerId, ...userData } = userSchema.parse(body);
+    const { password, role: roleName, providerId, districtId, branchId, ...userData } = userSchema.parse(body);
     // Validate password with the stronger shared password rules (includes breach check)
     try {
       // Use the exported `passwordSchema` which includes the async HaveIBeenPwned check.
@@ -150,6 +158,18 @@ export async function POST(req: NextRequest) {
         }
     }
 
+    // Handle district/branch assignment (branch must belong to district if both provided)
+    if (districtId) {
+      dataToCreate.districtId = districtId;
+    }
+    if (branchId) {
+      // validate branch exists and optionally belongs to district
+      const br = await prisma.branch.findUnique({ where: { id: branchId } });
+      if (!br) throw new Error('Invalid branch selected');
+      if (districtId && br.districtId !== districtId) throw new Error('Branch does not belong to selected district');
+      dataToCreate.branchId = branchId;
+    }
+
 
     const newUser = await prisma.user.create({
       data: dataToCreate,
@@ -186,7 +206,7 @@ export async function PUT(req: NextRequest) {
   try {
 
     const body = await req.json();
-    const { id, role: roleName, providerId, password, ...userData } = body;
+    const { id, role: roleName, providerId, districtId, branchId, password, ...userData } = body;
 
     if (!id) {
         throw new Error('User ID is required for an update.');
@@ -249,6 +269,37 @@ export async function PUT(req: NextRequest) {
              return NextResponse.json({ error: 'You can only assign users to your own provider.' }, { status: 403 });
         }
         dataToUpdate.loanProviderId = providerId;
+    }
+
+    // Handle district/branch relationship updates
+    if (user.role === 'Super Admin') {
+      if (districtId === null) {
+        dataToUpdate.districtId = null;
+      } else if (districtId) {
+        dataToUpdate.districtId = districtId;
+      }
+      if (branchId === null) {
+        dataToUpdate.branchId = null;
+      } else if (branchId) {
+        // validate branch
+        const br = await prisma.branch.findUnique({ where: { id: branchId } });
+        if (!br) return NextResponse.json({ error: 'Invalid branch selected' }, { status: 400 });
+        if (dataToUpdate.districtId && br.districtId !== dataToUpdate.districtId) {
+          return NextResponse.json({ error: 'Branch does not belong to selected district' }, { status: 400 });
+        }
+        dataToUpdate.branchId = branchId;
+      }
+    } else {
+      // Non-super-admins may update district/branch only if they are null or belong to same constraints; keep simple: allow provided values but validate relation
+      if (districtId) dataToUpdate.districtId = districtId;
+      if (branchId) {
+        const br = await prisma.branch.findUnique({ where: { id: branchId } });
+        if (!br) return NextResponse.json({ error: 'Invalid branch selected' }, { status: 400 });
+        if (districtId && br.districtId !== districtId) {
+          return NextResponse.json({ error: 'Branch does not belong to selected district' }, { status: 400 });
+        }
+        dataToUpdate.branchId = branchId;
+      }
     }
 
 

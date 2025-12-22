@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRequirePermission } from '@/hooks/use-require-permission';
 import { PlusCircle, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -225,6 +226,212 @@ function UsersTab() {
     );
 }
 
+function DistrictsTab() {
+    const [districts, setDistricts] = React.useState<Array<any>>([]);
+    const [newDistrictName, setNewDistrictName] = React.useState('');
+    const [editingDistrictId, setEditingDistrictId] = React.useState<string | null>(null);
+    const [districtEditingId, setDistrictEditingId] = React.useState<string | null>(null);
+    const [districtEditingName, setDistrictEditingName] = React.useState<string>('');
+    const [newBranchName, setNewBranchName] = React.useState('');
+    const [branchEditingId, setBranchEditingId] = React.useState<string | null>(null);
+    const [branchEditingName, setBranchEditingName] = React.useState<string>('');
+    const { toast } = useToast();
+
+    useEffect(() => {
+        const load = async () => {
+            try {
+                const res = await fetch('/api/districts');
+                if (!res.ok) throw new Error('Failed to load districts');
+                const data = await res.json();
+                setDistricts(data || []);
+            } catch (e) {
+                console.error('Failed to load districts', e);
+                toast({ title: 'Error', description: 'Could not load districts', variant: 'destructive' });
+            }
+        };
+        load();
+    }, []);
+
+    const addDistrict = async () => {
+        if (!newDistrictName.trim()) return toast({ title: 'Error', description: 'District name required', variant: 'destructive' });
+        try {
+            const res = await fetch('/api/districts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newDistrictName.trim() }) });
+            if (!res.ok) throw new Error('Failed to create');
+            setNewDistrictName('');
+            const created = await res.json();
+            setDistricts(prev => [...(prev||[]), { ...created, branches: [] }]);
+            toast({ title: 'Saved', description: 'District added.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not add district', variant: 'destructive' });
+        }
+    };
+
+    const removeDistrict = async (id: string) => {
+        try {
+            const res = await fetch(`/api/districts?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to delete');
+            setDistricts(prev => (prev||[]).filter(d => d.id !== id));
+            toast({ title: 'Removed', description: 'District removed.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not remove district', variant: 'destructive' });
+        }
+    };
+
+    const startEditDistrict = (d: any) => {
+        setDistrictEditingId(d.id);
+        setDistrictEditingName(d.name);
+    };
+
+    const cancelEditDistrict = () => {
+        setDistrictEditingId(null);
+        setDistrictEditingName('');
+    };
+
+    const saveEditDistrict = async () => {
+        if (!districtEditingId || !districtEditingName.trim()) return toast({ title: 'Error', description: 'Name required', variant: 'destructive' });
+        try {
+            const res = await fetch('/api/districts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: districtEditingId, name: districtEditingName.trim() }) });
+            if (!res.ok) throw new Error('Failed to update district');
+            const updated = await res.json();
+            setDistricts(prev => (prev||[]).map(d => d.id === updated.id ? { ...d, name: updated.name } : d));
+            cancelEditDistrict();
+            toast({ title: 'Saved', description: 'District updated.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not update district', variant: 'destructive' });
+        }
+    };
+
+    const addBranch = async (districtId: string) => {
+        if (!newBranchName.trim()) return toast({ title: 'Error', description: 'Branch name required', variant: 'destructive' });
+        try {
+            const res = await fetch('/api/districts/branches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ districtId, name: newBranchName.trim() }) });
+            if (!res.ok) throw new Error('Failed to create branch');
+            const created = await res.json();
+            setDistricts(prev => (prev||[]).map(d => d.id === districtId ? { ...d, branches: [...(d.branches||[]), created] } : d));
+            setNewBranchName('');
+            setEditingDistrictId(null);
+            toast({ title: 'Saved', description: 'Branch added.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not add branch', variant: 'destructive' });
+        }
+    };
+
+    const removeBranch = async (districtId: string, branchId: string) => {
+        try {
+            const res = await fetch(`/api/districts/branches?id=${encodeURIComponent(branchId)}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to delete branch');
+            setDistricts(prev => (prev||[]).map(d => d.id === districtId ? { ...d, branches: (d.branches||[]).filter((b:any) => b.id !== branchId) } : d));
+            toast({ title: 'Removed', description: 'Branch removed.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not remove branch', variant: 'destructive' });
+        }
+    };
+
+    const startEditBranch = (b: any) => {
+        setBranchEditingId(b.id);
+        setBranchEditingName(b.name);
+    };
+
+    const cancelEditBranch = () => {
+        setBranchEditingId(null);
+        setBranchEditingName('');
+    };
+
+    const saveEditBranch = async (districtId: string) => {
+        if (!branchEditingId || !branchEditingName.trim()) return toast({ title: 'Error', description: 'Name required', variant: 'destructive' });
+        try {
+            const res = await fetch('/api/districts/branches', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: branchEditingId, name: branchEditingName.trim() }) });
+            if (!res.ok) throw new Error('Failed to update branch');
+            const updated = await res.json();
+            setDistricts(prev => (prev||[]).map(d => d.id === districtId ? { ...d, branches: (d.branches||[]).map((br:any) => br.id === updated.id ? updated : br) } : d));
+            cancelEditBranch();
+            toast({ title: 'Saved', description: 'Branch updated.' });
+        } catch (e) {
+            console.error(e);
+            toast({ title: 'Error', description: 'Could not update branch', variant: 'destructive' });
+        }
+    };
+
+    return (
+        <>
+            <div className="flex items-center justify-between space-y-2 mb-4">
+                <div className="flex items-center space-x-2">
+                    <Input placeholder="New district name" value={newDistrictName} onChange={(e) => setNewDistrictName(e.target.value)} />
+                    <Button onClick={addDistrict}>Add District</Button>
+                </div>
+            </div>
+            <Card>
+                <CardHeader>
+                    <CardTitle>Districts & Branches</CardTitle>
+                    <CardDescription>Manage hierarchical districts and their branches. Changes are persisted to the server database.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="space-y-4">
+                        {(districts || []).map((d: any) => (
+                            <div key={d.id} className="border rounded p-3">
+                                <div className="flex justify-between items-center">
+                                    <div>
+                                        {districtEditingId === d.id ? (
+                                            <div className="flex items-center space-x-2">
+                                                <Input value={districtEditingName} onChange={(e) => setDistrictEditingName(e.target.value)} />
+                                                <Button size="sm" onClick={saveEditDistrict}>Save</Button>
+                                                <Button size="sm" variant="outline" onClick={cancelEditDistrict}>Cancel</Button>
+                                            </div>
+                                        ) : (
+                                            <div className="font-medium">{d.name}</div>
+                                        )}
+                                    </div>
+                                    <div className="space-x-2">
+                                        <Button size="sm" variant="ghost" onClick={() => setEditingDistrictId(d.id)}>Add Branch</Button>
+                                        {districtEditingId === d.id ? null : <Button size="sm" variant="ghost" onClick={() => startEditDistrict(d)}>Edit</Button>}
+                                        <Button size="sm" variant="destructive" onClick={() => removeDistrict(d.id)}>Delete</Button>
+                                    </div>
+                                </div>
+                                <div className="mt-2">
+                                    <div className="text-sm text-muted-foreground">Branches</div>
+                                    <ul className="mt-1 space-y-1">
+                                        {(d.branches||[]).map((b: any) => (
+                                            <li key={b.id} className="flex justify-between items-center">
+                                                <div>
+                                                    {branchEditingId === b.id ? (
+                                                        <div className="flex items-center space-x-2">
+                                                            <Input value={branchEditingName} onChange={(e) => setBranchEditingName(e.target.value)} />
+                                                            <Button size="sm" onClick={() => saveEditBranch(d.id)}>Save</Button>
+                                                            <Button size="sm" variant="outline" onClick={cancelEditBranch}>Cancel</Button>
+                                                        </div>
+                                                    ) : (
+                                                        <div>{b.name}</div>
+                                                    )}
+                                                </div>
+                                                <div className="space-x-2">
+                                                    {branchEditingId === b.id ? null : <Button size="sm" variant="ghost" onClick={() => startEditBranch(b)}>Edit</Button>}
+                                                    <Button size="sm" variant="ghost" onClick={() => removeBranch(d.id, b.id)}>Remove</Button>
+                                                </div>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                                {editingDistrictId === d.id && (
+                                    <div className="mt-3 flex items-center space-x-2">
+                                        <Input placeholder="Branch name" value={newBranchName} onChange={(e) => setNewBranchName(e.target.value)} />
+                                        <Button onClick={() => addBranch(d.id)}>Add</Button>
+                                        <Button variant="outline" onClick={() => { setEditingDistrictId(null); setNewBranchName(''); }}>Cancel</Button>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </CardContent>
+            </Card>
+        </>
+    );
+}
+
 function RolesTab() {
     const [roles, setRoles] = useState<Role[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -435,15 +642,19 @@ export default function AccessControlPage() {
             <h2 className="text-3xl font-bold tracking-tight">Access Control</h2>
             <Tabs defaultValue="users" className="space-y-4">
                 <TabsList>
-                    <TabsTrigger value="users">Users</TabsTrigger>
-                    <TabsTrigger value="roles">Roles</TabsTrigger>
-                </TabsList>
+                        <TabsTrigger value="users">Users</TabsTrigger>
+                        <TabsTrigger value="roles">Roles</TabsTrigger>
+                        <TabsTrigger value="districts">Districts</TabsTrigger>
+                    </TabsList>
                 <TabsContent value="users">
                     <UsersTab />
                 </TabsContent>
                 <TabsContent value="roles">
                     <RolesTab />
                 </TabsContent>
+                    <TabsContent value="districts">
+                        <DistrictsTab />
+                    </TabsContent>
             </Tabs>
         </div>
     );
