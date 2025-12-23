@@ -64,11 +64,11 @@ const ChangeDetailsDialog = ({
   isOpen: boolean;
   onClose: () => void;
 }) => {
-  if (!change) return null;
 
   const diffResult = useMemo(() => {
     try {
-        const { original, updated, created } = JSON.parse(change.payload);
+        if (!change) return null;
+        const { original, updated, created } = JSON.parse(change.payload || '{}');
 
         // Helper to unwrap Branch-style payloads which have shape: { type: string, data: {...} }
         const unwrapBranchPayload = (obj: any) => {
@@ -317,12 +317,13 @@ const ChangeDetailsDialog = ({
         return null;
     }
     return null;
-  }, [change]);
+      }, [change]);
 
   const termsContent = useMemo(() => {
+    if (!change) return null;
     if (change.entityType !== 'TermsAndConditions') return null;
     try {
-      const parsed = JSON.parse(change.payload);
+      const parsed = JSON.parse(change.payload || '{}');
       return {
         original: parsed.original?.content ?? '',
         updated: parsed.updated?.content ?? '',
@@ -333,6 +334,7 @@ const ChangeDetailsDialog = ({
   }, [change]);
 
   const loanProductExtras = useMemo(() => {
+    if (!change) return null;
     if (change.entityType !== 'LoanProduct') return null;
     try {
       const parsed = JSON.parse(change.payload);
@@ -350,6 +352,7 @@ const ChangeDetailsDialog = ({
   }, [change]);
 
   const loanCycleExtras = useMemo(() => {
+    if (!change) return null;
     if (change.entityType !== 'LoanCycleConfig') return null;
     try {
       const parsed = JSON.parse(change.payload);
@@ -373,8 +376,9 @@ const ChangeDetailsDialog = ({
   const getFileContentFromPayload = () => {
     try {
       // Only allow file preview for explicit upload-type changes
+      if (!change) return null;
       if (!(change.entityType === 'EligibilityList' || change.entityType === 'DataProvisioningUpload')) return null;
-      const parsed = JSON.parse(change.payload);
+      const parsed = JSON.parse(change.payload || '{}');
       // created or updated or original may contain fileContent fields
       const candidate = parsed.created || parsed.updated || parsed.original || {};
       // search nested objects for a field named fileContent (base64)
@@ -394,11 +398,12 @@ const ChangeDetailsDialog = ({
     } catch (e) { return null; }
   };
 
-  const isTermsChange = change.entityType === 'TermsAndConditions';
+  const isTermsChange = !!change && change.entityType === 'TermsAndConditions';
 
   const [previewOpen, setPreviewOpen] = React.useState(false);
   const [previewRows, setPreviewRows] = React.useState<any[] | null>(null);
   const [previewHeaders, setPreviewHeaders] = React.useState<string[] | null>(null);
+  const [subEntityDetails, setSubEntityDetails] = React.useState<any[] | null>(null);
 
   const openPreviewFromPayload = async () => {
     const fileContent = getFileContentFromPayload();
@@ -448,6 +453,100 @@ const ChangeDetailsDialog = ({
       console.error('Failed to parse file content preview:', err);
     }
   };
+
+  // Fetch human-friendly details for Branch-wrapped sub-entities when deletes
+  React.useEffect(() => {
+    let mounted = true;
+    setSubEntityDetails(null);
+    if (!change) return () => { mounted = false; };
+
+    (async () => {
+      try {
+        if (change.changeType !== 'DELETE') return;
+        const parsed = JSON.parse(change.payload || '{}');
+        const original = parsed.original || {};
+
+        // Branch wrapper may contain { type: 'MerchantUser', id } or { type: 'ProductCategory', id }
+        const wrapperType = original.type || original.__type || (original.__typename);
+        const wrapperData = original.data || original;
+        const id = wrapperData?.id || original.id;
+        if (!wrapperType || !id) return;
+
+        // Normalize type
+        const t = String(wrapperType).replace(/^\s+|\s+$/g, '');
+
+        // If the original wrapper already contains full data, prefer using it
+        const looksLikeFullData = wrapperData && typeof wrapperData === 'object' && Object.keys(wrapperData).length > 1;
+        if (looksLikeFullData) {
+          const fields = Object.entries(wrapperData).map(([k, v]) => {
+            // Normalize display label
+            const label = k === 'fullName' ? 'Full Name' : (k === 'name' ? 'Name' : k.charAt(0).toUpperCase() + k.slice(1));
+            // If merchant is an object, prefer its name for concise display
+            let beforeVal = v;
+            if (k.toLowerCase() === 'merchant' && v && typeof v === 'object') {
+              beforeVal = v.name ?? v.id ?? JSON.stringify(v);
+            }
+            return { field: label, before: beforeVal, type: 'removed' };
+          });
+          if (mounted) setSubEntityDetails(fields);
+          return;
+        }
+
+        if (t === 'Merchant') {
+          const res = await fetch('/api/admin/merchants');
+          if (!mounted) return;
+          const list = await res.json();
+          const item = Array.isArray(list) ? list.find((x: any) => x.id === id) : undefined;
+          if (!item) return;
+          setSubEntityDetails([
+            { field: 'Name', before: item.name, type: 'removed' },
+            { field: 'Status', before: item.status ?? 'N/A', type: 'removed' },
+            { field: 'Id', before: item.id, type: 'removed' },
+          ]);
+          return;
+        }
+
+        if (t === 'MerchantUser' || t === 'User') {
+          const res = await fetch('/api/admin/merchant-users');
+          if (!mounted) return;
+          const body = await res.json();
+          const list = body?.data ?? body ?? [];
+          const user = Array.isArray(list) ? list.find((x: any) => x.id === id) : undefined;
+          if (!user) return;
+          setSubEntityDetails([
+            { field: 'Full Name', before: user.fullName ?? 'N/A', type: 'removed' },
+            { field: 'Email', before: user.email ?? 'N/A', type: 'removed' },
+            { field: 'Phone', before: user.phoneNumber ?? 'N/A', type: 'removed' },
+            { field: 'Merchant', before: user.merchant?.name ?? user.merchantId ?? 'N/A', type: 'removed' },
+            { field: 'Id', before: user.id, type: 'removed' },
+          ]);
+          return;
+        }
+
+        if (t === 'ProductCategory' || t === 'Category') {
+          const res = await fetch('/api/admin/product-categories');
+          if (!mounted) return;
+          const list = await res.json();
+          const item = Array.isArray(list) ? list.find((x: any) => x.id === id) : undefined;
+          if (!item) return;
+          setSubEntityDetails([
+            { field: 'Name', before: item.name, type: 'removed' },
+            { field: 'Status', before: item.status ?? 'N/A', type: 'removed' },
+            { field: 'Id', before: item.id, type: 'removed' },
+          ]);
+          return;
+        }
+
+      } catch (e) {
+        // ignore fetch/parse errors and leave subEntityDetails null
+        console.warn('Failed to fetch sub-entity details for approval view', e);
+      }
+    })();
+
+    return () => { mounted = false; };
+  }, [change]);
+
+  if (!change) return null;
 
   const renderPenaltyRulesTable = (rules: any[]) => {
     if (!rules || rules.length === 0) {
@@ -653,17 +752,83 @@ const ChangeDetailsDialog = ({
                                 <div className="col-span-1">After</div>
                             </div>
                             <Separator />
-                            {diffResult?.details.map((item, index) => (
-                                 <div key={index} className="grid grid-cols-3 gap-x-4 py-2 border-b last:border-none">
-                                    <div className="col-span-1 font-medium capitalize">{item.field}</div>
-                                    <div className="col-span-1 text-red-600 line-through">
-                                        {item.type !== 'added' ? renderFieldValue(item.before) : ''}
+                            {change.changeType === 'DELETE' && change.entityType === 'Branch' && subEntityDetails && (
+                              <>
+                                {(() => {
+                                  const tsRe = /^(created\s*at|updated\s*at|createdat|updatedat)$/i;
+                                  const normalize = (s: any) => String(s || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+                                  // Find a Type row either in subEntityDetails or in diff details, and remove it from its source so it doesn't duplicate
+                                  let typeItem: any = null;
+
+                                  // search subEntityDetails first
+                                  const subFiltered = (subEntityDetails || []).filter((it) => {
+                                    if (normalize(it.field) === 'type') {
+                                      typeItem = it;
+                                      return false;
+                                    }
+                                    return true;
+                                  }).filter((item) => !tsRe.test(String(item.field || '')));
+
+                                  // If not found in subEntityDetails, try diffResult.details
+                                  let remainingFromDiff: any[] = diffResult?.details ? [...diffResult.details] : [];
+                                  if (!typeItem && remainingFromDiff.length > 0) {
+                                    const idx = remainingFromDiff.findIndex(d => normalize(d.field) === 'type');
+                                    if (idx !== -1) {
+                                      typeItem = remainingFromDiff.splice(idx, 1)[0];
+                                    }
+                                  }
+
+                                  // render Type first if present
+                                  const rows: React.ReactNode[] = [];
+                                  if (typeItem) {
+                                    rows.push(
+                                      <div key="type-top" className="grid grid-cols-3 gap-x-4 py-2 border-b last:border-none">
+                                        <div className="col-span-1 font-medium">{typeItem.field}</div>
+                                        <div className="col-span-1 text-red-600">{renderFieldValue(typeItem.before)}</div>
+                                        <div className="col-span-1 text-green-600">{typeItem.type === 'removed' ? <span className="text-muted-foreground">Removed</span> : renderFieldValue(typeItem.after)}</div>
+                                      </div>
+                                    );
+                                  }
+
+                                  // then render the rest of sub-entity details
+                                  rows.push(...subFiltered.map((item, si) => (
+                                    <div key={`sub-${si}`} className="grid grid-cols-3 gap-x-4 py-2 border-b last:border-none">
+                                      <div className="col-span-1 font-medium">{item.field}</div>
+                                      <div className="col-span-1 text-red-600">{renderFieldValue(item.before)}</div>
+                                      <div className="col-span-1 text-green-600">{item.type === 'removed' ? <span className="text-muted-foreground">Removed</span> : renderFieldValue(item.after)}</div>
                                     </div>
-                                    <div className="col-span-1 text-green-600">
-                                        {item.type !== 'removed' ? renderFieldValue(item.after) : ''}
-                                    </div>
+                                  )));
+
+                                  // store back the possibly-modified remaining diff details for later rendering
+                                  // We set a temporary prop on diffResult for the remainder to use below
+                                  (diffResult as any).__remaining = remainingFromDiff.filter((d: any) => !tsRe.test(String(d.field || '')));
+
+                                  return rows;
+                                })()}
+                                <Separator />
+                              </>
+                            )}
+
+                            {(() => {
+                              const normalize = (s: any) => String(s || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+                              const existing = new Set<string>((subEntityDetails || []).map(s => normalize(s.field)));
+                              const tsRe = /^(created\s*at|updated\s*at|createdat|updatedat)$/i;
+                              // Prefer any precomputed remaining list from earlier (we may have removed Type)
+                              const precomputed = (diffResult as any)?.__remaining as any[] | undefined;
+                              const remaining = (precomputed || (diffResult?.details || [])).filter((d: any) => !existing.has(normalize(d.field)) && !tsRe.test(String(d.field || '')));
+                              return remaining.map((item: any, index: number) => (
+                               <div key={index} className="grid grid-cols-3 gap-x-4 py-2 border-b last:border-none">
+                                <div className="col-span-1 font-medium capitalize">{item.field}</div>
+                                <div className="col-span-1 text-red-600">
+                                  {item.type !== 'added' ? renderFieldValue(item.before) : ''}
                                 </div>
-                            ))}
+                                <div className="col-span-1 text-green-600">
+                                  {item.type === 'removed' ? <span className="text-muted-foreground">Removed</span> : renderFieldValue(item.after)}
+                                </div>
+                              </div>
+                              ));
+                            })()}
                             {getFileContentFromPayload() && (
                               <div className="grid grid-cols-3 gap-x-4 py-2">
                                 <div className="col-span-1 font-medium">Uploaded File</div>

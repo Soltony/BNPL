@@ -143,7 +143,9 @@ export default function BranchPage() {
     try {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'MerchantUser', id } }) }, 'Failed to submit merchant user removal for approval');
+        const user = merchantUsers.find(u => u.id === id);
+        const original = user ? { type: 'MerchantUser', data: user } : { type: 'MerchantUser', id };
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit merchant user removal for approval');
         toast({ title: 'Submitted', description: 'Merchant user removal submitted for approval.' });
         return;
       }
@@ -270,7 +272,9 @@ export default function BranchPage() {
     try {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'Merchant', id } }) }, 'Failed to submit merchant deletion for approval');
+        const m = merchants.find(m => m.id === id);
+        const original = m ? { type: 'Merchant', data: m } : { type: 'Merchant', id };
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit merchant deletion for approval');
         toast({ title: 'Submitted', description: 'Merchant deletion submitted for approval.' });
         return;
       }
@@ -335,7 +339,9 @@ export default function BranchPage() {
     try {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'ProductCategory', id } }) }, 'Failed to submit category deletion for approval');
+        const c = categories.find(c => c.id === id);
+        const original = c ? { type: 'ProductCategory', data: c } : { type: 'ProductCategory', id };
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit category deletion for approval');
         toast({ title: 'Submitted', description: 'Category deletion submitted for approval.' });
         return;
       }
