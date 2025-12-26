@@ -39,6 +39,297 @@ const defaultLedgerAccounts = [
     { name: 'Penalty Income', type: 'Income', category: 'Penalty' },
 ];
 
+async function applyMerchantItemCreate(data: any) {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        const item = await tx.item.create({
+            data: {
+                merchantId: data.merchantId,
+                categoryId: data.categoryId,
+                name: data.name,
+                description: data.description ?? undefined,
+                price: data.price,
+                imageUrl: data.imageUrl ?? undefined,
+                videoUrl: data.videoUrl ?? undefined,
+                currency: data.currency ?? 'ETB',
+                status: data.status ?? 'ACTIVE',
+                stockQuantity: data.stockQuantity ?? undefined,
+                optionGroups: data.optionGroups?.length
+                    ? {
+                        create: data.optionGroups.map((g: any) => ({
+                            name: g.name,
+                            status: g.status ?? 'ACTIVE',
+                            isRequired: g.isRequired ?? true,
+                            values: g.values?.length
+                                ? {
+                                    create: g.values.map((v: any) => ({
+                                        label: v.label,
+                                        priceDelta: v.priceDelta,
+                                        status: v.status ?? 'ACTIVE',
+                                    })),
+                                }
+                                : undefined,
+                        })),
+                    }
+                    : undefined,
+                variants: data.variants?.length
+                    ? {
+                        create: data.variants.map((v: any) => ({
+                            size: v.size ?? undefined,
+                            color: v.color ?? undefined,
+                            material: v.material ?? undefined,
+                            price: v.price,
+                            status: v.status ?? 'ACTIVE',
+                        })),
+                    }
+                    : undefined,
+            },
+            include: {
+                optionGroups: { include: { values: true } },
+            },
+        });
+
+        // Create combination inventory levels (matched by group name + label)
+        if (data.combinationInventoryLevels?.length) {
+            const byGroupAndLabel = new Map<string, { id: string; groupId: string }>();
+            for (const g of (item as any).optionGroups || []) {
+                for (const v of (g as any).values || []) {
+                    byGroupAndLabel.set(`${g.name}::${v.label}`, { id: v.id, groupId: g.id });
+                }
+            }
+
+            for (const row of data.combinationInventoryLevels) {
+                const selections = row.optionSelections || [];
+                if (!selections.length) throw new Error('optionSelections is required for combinationInventoryLevels on create');
+
+                const groupSeen = new Set<string>();
+                const optionValueIds: string[] = [];
+                for (const s of selections) {
+                    const ov = byGroupAndLabel.get(`${s.optionGroupName}::${s.optionValueLabel}`);
+                    if (!ov) throw new Error(`No option value found for ${s.optionGroupName}: ${s.optionValueLabel}`);
+                    if (groupSeen.has(ov.groupId)) throw new Error('Only one value per attribute group is allowed in a combination');
+                    groupSeen.add(ov.groupId);
+                    optionValueIds.push(ov.id);
+                }
+
+                const sorted = [...new Set(optionValueIds)].sort();
+                const combinationKey = sorted.join('|');
+
+                await tx.combinationInventoryLevel.create({
+                    data: {
+                        itemId: item.id,
+                        locationId: row.locationId,
+                        combinationKey,
+                        optionValueIds: JSON.stringify(sorted),
+                        quantityAvailable: row.quantityAvailable,
+                        reservedQuantity: 0,
+                    },
+                });
+            }
+        }
+    });
+}
+
+async function applyMerchantItemUpdate(itemId: string, data: any) {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.item.update({
+            where: { id: itemId },
+            data: {
+                merchantId: data.merchantId,
+                categoryId: data.categoryId,
+                name: data.name,
+                description: data.description ?? undefined,
+                price: data.price,
+                imageUrl: data.imageUrl ?? undefined,
+                videoUrl: data.videoUrl ?? undefined,
+                currency: data.currency ?? 'ETB',
+                status: data.status,
+                stockQuantity: data.stockQuantity ?? undefined,
+            },
+        });
+
+        if (data.optionGroups) {
+            const existingGroups = await tx.itemOptionGroup.findMany({ where: { itemId }, select: { id: true } });
+            const existingGroupIds = new Set(existingGroups.map((g) => g.id));
+            const incomingGroupIds = new Set((data.optionGroups || []).map((g: any) => g.id).filter(Boolean) as string[]);
+
+            const groupsToDelete = [...existingGroupIds].filter((gid) => !incomingGroupIds.has(gid));
+            if (groupsToDelete.length) {
+                await tx.itemOptionGroup.deleteMany({ where: { id: { in: groupsToDelete } } });
+            }
+
+            for (const g of data.optionGroups) {
+                let groupId: string;
+                if (g.id && existingGroupIds.has(g.id)) {
+                    const updatedGroup = await tx.itemOptionGroup.update({
+                        where: { id: g.id },
+                        data: {
+                            name: g.name,
+                            status: g.status ?? undefined,
+                            isRequired: g.isRequired ?? undefined,
+                        },
+                    });
+                    groupId = updatedGroup.id;
+                } else {
+                    const createdGroup = await tx.itemOptionGroup.create({
+                        data: {
+                            itemId,
+                            name: g.name,
+                            status: g.status ?? 'ACTIVE',
+                            isRequired: g.isRequired ?? true,
+                        },
+                    });
+                    groupId = createdGroup.id;
+                }
+
+                if (g.values) {
+                    const existingValues = await tx.itemOptionValue.findMany({ where: { groupId }, select: { id: true } });
+                    const existingValueIds = new Set(existingValues.map((v) => v.id));
+                    const incomingValueIds = new Set((g.values || []).map((v: any) => v.id).filter(Boolean) as string[]);
+
+                    const valuesToDelete = [...existingValueIds].filter((vid) => !incomingValueIds.has(vid));
+                    if (valuesToDelete.length) {
+                        await tx.itemOptionValue.deleteMany({ where: { id: { in: valuesToDelete } } });
+                    }
+
+                    for (const v of g.values) {
+                        if (v.id && existingValueIds.has(v.id)) {
+                            await tx.itemOptionValue.update({
+                                where: { id: v.id },
+                                data: {
+                                    label: v.label,
+                                    priceDelta: v.priceDelta,
+                                    status: v.status ?? undefined,
+                                },
+                            });
+                        } else {
+                            await tx.itemOptionValue.create({
+                                data: {
+                                    groupId,
+                                    label: v.label,
+                                    priceDelta: v.priceDelta,
+                                    status: v.status ?? 'ACTIVE',
+                                },
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        if (data.variants) {
+            const existing = await tx.itemVariant.findMany({ where: { itemId }, select: { id: true } });
+            const existingIds = new Set(existing.map((e) => e.id));
+            const incomingIds = new Set((data.variants || []).map((v: any) => v.id).filter(Boolean) as string[]);
+
+            const toDelete = [...existingIds].filter((vid) => !incomingIds.has(vid));
+            if (toDelete.length) {
+                await tx.itemVariant.deleteMany({ where: { id: { in: toDelete } } });
+            }
+
+            for (const v of data.variants) {
+                if (v.id && existingIds.has(v.id)) {
+                    await tx.itemVariant.update({
+                        where: { id: v.id },
+                        data: {
+                            size: v.size ?? undefined,
+                            color: v.color ?? undefined,
+                            material: v.material ?? undefined,
+                            price: v.price,
+                            status: v.status ?? undefined,
+                        },
+                    });
+                } else {
+                    await tx.itemVariant.create({
+                        data: {
+                            itemId,
+                            size: v.size ?? undefined,
+                            color: v.color ?? undefined,
+                            material: v.material ?? undefined,
+                            price: v.price,
+                            status: v.status ?? 'ACTIVE',
+                        },
+                    });
+                }
+            }
+        }
+
+        if (data.combinationInventoryLevels) {
+            const incoming = (data.combinationInventoryLevels || []).map((r: any) => ({
+                locationId: r.locationId,
+                quantityAvailable: r.quantityAvailable,
+                optionValueIds: [...new Set(r.optionValueIds || [])],
+            }));
+
+            const allOptionValueIds = [...new Set(incoming.flatMap((r: any) => r.optionValueIds))];
+            const values = await tx.itemOptionValue.findMany({
+                where: {
+                    id: { in: allOptionValueIds },
+                    group: { itemId },
+                },
+                select: { id: true, groupId: true },
+            });
+            if (values.length !== allOptionValueIds.length) {
+                throw new Error('One or more option values do not belong to this item');
+            }
+            const groupByValueId = new Map(values.map((v) => [v.id, v.groupId] as const));
+
+            const normalizedIncoming = incoming.map((r: any) => {
+                const groupSeen = new Set<string>();
+                for (const ovId of r.optionValueIds) {
+                    const gid = groupByValueId.get(ovId);
+                    if (!gid) throw new Error('Invalid option value');
+                    if (groupSeen.has(gid)) throw new Error('Only one value per attribute group is allowed in a combination');
+                    groupSeen.add(gid);
+                }
+                const sorted = [...new Set(r.optionValueIds)].sort();
+                return {
+                    locationId: r.locationId,
+                    quantityAvailable: r.quantityAvailable,
+                    optionValueIds: sorted,
+                    combinationKey: sorted.join('|'),
+                };
+            });
+
+            const existing = await tx.combinationInventoryLevel.findMany({
+                where: { itemId },
+                select: { id: true, locationId: true, combinationKey: true },
+            });
+            const existingByKey = new Map(existing.map((r) => [`${r.locationId}|${r.combinationKey}`, r] as const));
+            const incomingKeys = new Set(normalizedIncoming.map((r) => `${r.locationId}|${r.combinationKey}`));
+
+            const toDelete = existing
+                .filter((r) => !incomingKeys.has(`${r.locationId}|${r.combinationKey}`))
+                .map((r) => r.id);
+            if (toDelete.length) await tx.combinationInventoryLevel.deleteMany({ where: { id: { in: toDelete } } });
+
+            for (const row of normalizedIncoming) {
+                const key = `${row.locationId}|${row.combinationKey}`;
+                const ex = existingByKey.get(key);
+                if (ex) {
+                    await tx.combinationInventoryLevel.update({
+                        where: { id: ex.id },
+                        data: {
+                            quantityAvailable: row.quantityAvailable,
+                            optionValueIds: JSON.stringify(row.optionValueIds),
+                        },
+                    });
+                } else {
+                    await tx.combinationInventoryLevel.create({
+                        data: {
+                            itemId,
+                            locationId: row.locationId,
+                            combinationKey: row.combinationKey,
+                            optionValueIds: JSON.stringify(row.optionValueIds),
+                            quantityAvailable: row.quantityAvailable,
+                            reservedQuantity: 0,
+                        },
+                    });
+                }
+            }
+        }
+    });
+}
+
 
 async function applyDataProvisioningUpload(change: any, data: any) {
     const { fileContent, fileName, configId } = data.created;
@@ -419,6 +710,73 @@ async function applyChange(change: any) {
                     break;
                 default:
                     throw new Error(`Unknown branch subtype for approval: ${subtype}`);
+            }
+        }
+      break;
+
+    case 'Merchants':
+        // Wrapper for Merchants module operations (excluding Orders)
+        // Payload shape expected: { created?: { type: string, data: any }, updated?: { type: string, data: any }, original?: { type: string, data: any } }
+        {
+            const inner = data.created || data.updated || data.original || {};
+            const subtype = inner.type || null;
+            const payloadData = inner.data || inner;
+
+            if (!subtype) {
+                throw new Error('Missing subtype for Merchants change');
+            }
+
+            switch (subtype) {
+                case 'StockLocation':
+                    if (changeType === 'CREATE') {
+                        await prisma.stockLocation.create({ data: payloadData });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.stockLocation.update({ where: { id: entityId! }, data: payloadData });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.stockLocation.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'DiscountRule':
+                    if (changeType === 'CREATE') {
+                        await prisma.discountRule.create({
+                            data: {
+                                type: payloadData.type,
+                                value: payloadData.value,
+                                startDate: payloadData.startDate ? new Date(payloadData.startDate) : undefined,
+                                endDate: payloadData.endDate ? new Date(payloadData.endDate) : undefined,
+                                itemId: payloadData.itemId ?? undefined,
+                                categoryId: payloadData.categoryId ?? undefined,
+                                minimumQuantity: payloadData.minimumQuantity ?? undefined,
+                            },
+                        });
+                    } else if (changeType === 'UPDATE') {
+                        await prisma.discountRule.update({
+                            where: { id: entityId! },
+                            data: {
+                                type: payloadData.type,
+                                value: payloadData.value,
+                                startDate: payloadData.startDate ? new Date(payloadData.startDate) : null,
+                                endDate: payloadData.endDate ? new Date(payloadData.endDate) : null,
+                                itemId: payloadData.itemId ?? null,
+                                categoryId: payloadData.categoryId ?? null,
+                                minimumQuantity: payloadData.minimumQuantity ?? null,
+                            },
+                        });
+                    } else if (changeType === 'DELETE') {
+                        await prisma.discountRule.delete({ where: { id: entityId! } });
+                    }
+                    break;
+                case 'Item':
+                    if (changeType === 'CREATE') {
+                        await applyMerchantItemCreate(payloadData);
+                    } else if (changeType === 'UPDATE') {
+                        await applyMerchantItemUpdate(entityId as string, payloadData);
+                    } else if (changeType === 'DELETE') {
+                        await prisma.item.delete({ where: { id: entityId as string } });
+                    }
+                    break;
+                default:
+                    throw new Error(`Unknown Merchants subtype for approval: ${subtype}`);
             }
         }
       break;

@@ -26,7 +26,18 @@ const ENTITY_TO_MODULE: Record<string, string[]> = {
   termsandconditions: ['settings'],
   loancycleconfig: ['settings'],
   dataprovisioningconfig: ['scoring-engine', 'settings'],
-  scoringrules: ['scoring-engine']
+  scoringrules: ['scoring-engine'],
+
+  // BNPL / Merchants module
+  merchants: ['merchants'],
+  merchant: ['merchants'],
+  item: ['merchants'],
+  itemvariant: ['merchants'],
+  discountrule: ['merchants'],
+  stocklocation: ['merchants'],
+  inventorylevel: ['merchants'],
+  combinationinventorylevel: ['merchants'],
+  productcategory: ['merchants'],
 };
 
 export function entityTypeToPermissionKeys(entityType: string) {

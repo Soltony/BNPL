@@ -997,9 +997,13 @@ const ChangeDetailsDialog = ({
 export function ApprovalsClient({
   pendingChanges: initialChanges,
   currentUser,
+  title,
+  description,
 }: {
   pendingChanges: PendingChangeWithDetails[];
   currentUser: User;
+  title?: string;
+  description?: string;
 }) {
   useRequirePermission('approvals');
   const [changes, setChanges] = useState(initialChanges);
@@ -1048,11 +1052,11 @@ export function ApprovalsClient({
   return (
     <>
       <div className="flex-1 space-y-4 p-8 pt-6">
-        <h2 className="text-3xl font-bold tracking-tight">Pending Approvals</h2>
+        <h2 className="text-3xl font-bold tracking-tight">{title ?? 'Pending Approvals'}</h2>
         <Card>
           <CardHeader>
             <CardTitle>Change Requests</CardTitle>
-            <CardDescription>Review and approve or reject pending changes made by other users.</CardDescription>
+            <CardDescription>{description ?? 'Review and approve or reject pending changes made by other users.'}</CardDescription>
           </CardHeader>
           <CardContent>
             <Table>

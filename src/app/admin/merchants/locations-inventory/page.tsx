@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, PlusCircle } from 'lucide-react';
+import { postPendingChange } from '@/lib/fetch-utils';
 
 type StockLocation = {
 	id: string;
@@ -83,7 +84,6 @@ export default function MerchantsLocationsInventoryPage() {
 
 	const saveLocation = async () => {
 		try {
-			const method = editingLocation ? 'PUT' : 'POST';
 			const payload: any = {
 				name: locationName,
 				address: locationAddress.trim() ? locationAddress.trim() : null,
@@ -92,16 +92,22 @@ export default function MerchantsLocationsInventoryPage() {
 			};
 			if (editingLocation) payload.id = editingLocation.id;
 
-			const res = await fetch('/api/admin/stock-locations', {
-				method,
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify(payload),
-			});
-			const data = await res.json().catch(() => null);
-			if (!res.ok) throw new Error(data?.error || 'Failed to save location');
-			toast({ title: 'Saved', description: 'Stock location saved.' });
+			await postPendingChange(
+				{
+					entityType: 'Merchants',
+					entityId: editingLocation?.id,
+					changeType: editingLocation ? 'UPDATE' : 'CREATE',
+					payload: JSON.stringify(
+						editingLocation
+							? { original: { type: 'StockLocation', data: editingLocation }, updated: { type: 'StockLocation', data: payload } }
+							: { created: { type: 'StockLocation', data: payload } }
+					),
+				},
+				'Failed to submit stock location for approval.'
+			);
+
+			toast({ title: 'Submitted', description: 'Stock location submitted for approval.' });
 			setLocationDialogOpen(false);
-			await load();
 		} catch (err: any) {
 			toast({ title: 'Error', description: err?.message || 'Failed to save', variant: 'destructive' });
 		}
@@ -109,11 +115,17 @@ export default function MerchantsLocationsInventoryPage() {
 
 	const deleteLocation = async (id: string) => {
 		try {
-			const res = await fetch(`/api/admin/stock-locations?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-			const data = await res.json().catch(() => null);
-			if (!res.ok) throw new Error(data?.error || 'Failed to delete location');
-			toast({ title: 'Deleted', description: 'Stock location deleted.' });
-			await load();
+			const original = locations.find((l) => l.id === id) || { id };
+			await postPendingChange(
+				{
+					entityType: 'Merchants',
+					entityId: id,
+					changeType: 'DELETE',
+					payload: JSON.stringify({ original: { type: 'StockLocation', data: original } }),
+				},
+				'Failed to submit stock location deletion for approval.'
+			);
+			toast({ title: 'Submitted', description: 'Stock location deletion submitted for approval.' });
 		} catch (err: any) {
 			toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
 		}

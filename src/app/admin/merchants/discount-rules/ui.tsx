@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, PlusCircle } from 'lucide-react';
+import { postPendingChange } from '@/lib/fetch-utils';
 
 type Category = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 type Item = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
@@ -134,15 +135,21 @@ export default function DiscountRulesPage() {
       };
       if (editing) payload.id = editing.id;
 
-      const res = await fetch('/api/admin/discount-rules', {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to save rule');
+      await postPendingChange(
+        {
+          entityType: 'Merchants',
+          entityId: editing?.id,
+          changeType: editing ? 'UPDATE' : 'CREATE',
+          payload: JSON.stringify(
+            editing
+              ? { original: { type: 'DiscountRule', data: editing }, updated: { type: 'DiscountRule', data: payload } }
+              : { created: { type: 'DiscountRule', data: payload } }
+          ),
+        },
+        'Failed to submit discount rule for approval.'
+      );
 
-      toast({ title: 'Saved', description: 'Discount rule saved.' });
+      toast({ title: 'Submitted', description: 'Discount rule submitted for approval.' });
       setDialogOpen(false);
       await load();
     } catch (err: any) {
@@ -152,11 +159,18 @@ export default function DiscountRulesPage() {
 
   const remove = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/discount-rules?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete rule');
-      toast({ title: 'Deleted', description: 'Discount rule deleted.' });
-      await load();
+      const original = rules.find((r) => r.id === id) || { id };
+      await postPendingChange(
+        {
+          entityType: 'Merchants',
+          entityId: id,
+          changeType: 'DELETE',
+          payload: JSON.stringify({ original: { type: 'DiscountRule', data: original } }),
+        },
+        'Failed to submit discount rule deletion for approval.'
+      );
+
+      toast({ title: 'Submitted', description: 'Discount rule deletion submitted for approval.' });
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
     }

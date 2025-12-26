@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
+import { postPendingChange } from '@/lib/fetch-utils';
 
 type Merchant = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 type Category = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
@@ -75,6 +76,8 @@ export default function EditItemPageClient() {
   const [itemImagePreview, setItemImagePreview] = useState<string | null>(null);
   const [itemVideoUrl, setItemVideoUrl] = useState('');
 
+  const [originalItem, setOriginalItem] = useState<any>(null);
+
   const [optionGroups, setOptionGroups] = useState<OptionGroupDraft[]>([]);
   const [inventoryRows, setInventoryRows] = useState<InventoryDraftRow[]>([]);
 
@@ -134,6 +137,8 @@ export default function EditItemPageClient() {
       const categoriesJson = await cRes.json();
       const locationsJson = await locRes.json();
       const itemJson = await itemRes.json();
+
+      setOriginalItem(itemJson);
 
       setMerchants(merchantsJson);
       setCategories(categoriesJson);
@@ -273,15 +278,20 @@ export default function EditItemPageClient() {
         body.imageUrl = itemImagePreview;
       }
 
-      const res = await fetch('/api/admin/items', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to save item');
+      await postPendingChange(
+        {
+          entityType: 'Merchants',
+          entityId: id,
+          changeType: 'UPDATE',
+          payload: JSON.stringify({
+            original: { type: 'Item', data: originalItem || { id } },
+            updated: { type: 'Item', data: body },
+          }),
+        },
+        'Failed to submit item update for approval.'
+      );
 
-      toast({ title: 'Saved', description: 'Item updated successfully.' });
+      toast({ title: 'Submitted', description: 'Item update submitted for approval.' });
       router.push('/admin/merchants/items');
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to save', variant: 'destructive' });

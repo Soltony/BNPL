@@ -16,6 +16,9 @@ async function getPendingChanges(): Promise<PendingChangeWithDetails[]> {
     const changes = await prisma.pendingChange.findMany({
         where: {
             status: 'PENDING',
+            NOT: {
+                entityType: 'Merchants',
+            },
         },
         include: {
             createdBy: true,

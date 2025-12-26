@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, PlusCircle } from 'lucide-react';
+import { postPendingChange } from '@/lib/fetch-utils';
 
 type Merchant = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 type Category = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
@@ -118,11 +119,18 @@ export default function MerchantItemsPage() {
 
   const deleteItem = async (id: string) => {
     try {
-      const res = await fetch(`/api/admin/items?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to delete item');
-      toast({ title: 'Deleted', description: 'Item deleted.' });
-      await load();
+      const original = items.find((it) => it.id === id) || { id };
+      await postPendingChange(
+        {
+          entityType: 'Merchants',
+          entityId: id,
+          changeType: 'DELETE',
+          payload: JSON.stringify({ original: { type: 'Item', data: original } }),
+        },
+        'Failed to submit item deletion for approval.'
+      );
+
+      toast({ title: 'Submitted', description: 'Item deletion submitted for approval.' });
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to delete', variant: 'destructive' });
     }

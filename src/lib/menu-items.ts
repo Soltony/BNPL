@@ -61,6 +61,12 @@ export const allMenuItems = [
     ],
   },
   {
+    path: '/admin/merchants-approvals',
+    label: 'Merchants Approvals',
+    icon: CheckSquare,
+    roles: ['Super Admin', 'Loan Manager'],
+  },
+  {
     path: '/admin/reports',
     label: 'Reports',
     icon: FileText,

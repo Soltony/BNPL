@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Loader2 } from 'lucide-react';
+import { postPendingChange } from '@/lib/fetch-utils';
 
 type Merchant = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
 type Category = { id: string; name: string; status: 'ACTIVE' | 'INACTIVE' };
@@ -232,15 +233,18 @@ export default function AddItemPage() {
         body.imageUrl = upData.url;
       }
 
-      const res = await fetch('/api/admin/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.error || 'Failed to save item');
+      // All merchants-module operations (except Orders) go through approval.
+      // Submit the intended create as a pending change instead of applying it immediately.
+      await postPendingChange(
+        {
+          entityType: 'Merchants',
+          changeType: 'CREATE',
+          payload: JSON.stringify({ created: { type: 'Item', data: body } }),
+        },
+        'Failed to submit item for approval.'
+      );
 
-      toast({ title: 'Saved', description: 'Item saved successfully.' });
+      toast({ title: 'Submitted', description: 'Item submitted for approval.' });
       router.push('/admin/merchants/items');
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to save', variant: 'destructive' });
