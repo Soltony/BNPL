@@ -116,7 +116,21 @@ export default function ShopSearchClient({
             <Card key={item.id} className="overflow-hidden group flex flex-col h-full min-h-[220px] rounded-lg shadow-xl hover:shadow-2xl transition-shadow">
               <div className="relative overflow-hidden">
                 <Link href={href}>
-                  <img src={item.imageUrl ?? `https://placehold.co/600x400/eee/ccc?text=${encodeURIComponent(item.name)}`} alt={item.name} className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-300 shadow-md" />
+                  <img
+                    src={(function () {
+                      const v = item.imageUrl ?? '';
+                      if (!v) return `/images/placeholder-item.svg`;
+                      if (/^https?:\/\//i.test(v)) return v;
+                      return v.startsWith('/') ? v : '/' + v;
+                    })()}
+                    alt={item.name}
+                    className="w-full h-40 object-cover group-hover:scale-105 transition-transform duration-300 shadow-md"
+                    onError={(e) => {
+                      const t = e.currentTarget as HTMLImageElement;
+                      t.onerror = null;
+                      t.src = '/images/placeholder-item.svg';
+                    }}
+                  />
                 </Link>
               </div>
 

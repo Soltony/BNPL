@@ -126,7 +126,21 @@ export function ShopItemDetailClient({ item, borrowerId }: { item: ShopItem; bor
       </CardHeader>
       {item.imageUrl ? (
         <div className="p-4">
-          <img src={item.imageUrl} alt={item.name} className="w-full max-h-64 object-cover rounded" />
+          <img
+            src={(function () {
+              const v = item.imageUrl ?? '';
+              if (!v) return '/images/placeholder-item.svg';
+              if (/^https?:\/\//i.test(v)) return v;
+              return v.startsWith('/') ? v : '/' + v;
+            })()}
+            alt={item.name}
+            className="w-full max-h-64 object-cover rounded"
+            onError={(e) => {
+              const t = e.currentTarget as HTMLImageElement;
+              t.onerror = null;
+              t.src = '/images/placeholder-item.svg';
+            }}
+          />
         </div>
       ) : null}
       <CardContent className="flex flex-col gap-2">
