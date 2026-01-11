@@ -228,14 +228,15 @@ export default async function middleware(req: NextRequest) {
     const firstAllowedPage = computeFirstAllowedPage(userPermissions, PERMISSION_MAP, ORDERED_ADMIN_PAGES);
 
     const currentRouteConfig = findBestMenuItemMatch(path);
-
-    console.debug('[middleware]', {
+   /*console.debug('[middleware]', {
       requestId,
       path,
       role: session?.role,
       firstAllowedPage,
       matchedMenuPath: currentRouteConfig?.path,
-    });
+    });*/
+
+    
 
     // Permission enforcement (non-super-admin)
     const isSuperAdmin = session?.role === 'Super Admin';

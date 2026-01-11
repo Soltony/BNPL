@@ -63,10 +63,11 @@ export function entityTypeToPermissionKeys(entityType: string) {
   return Array.from(keys);
 }
 
-export function hasPermission(user: { permissions?: Permissions }, moduleKey: string, action: PermissionSet) {
+export function hasPermission(user: { permissions?: Permissions; role?: string } | any, moduleKey: string, action: PermissionSet) {
   if (!user) return false;
   const perms = user.permissions || {};
   const key = moduleKey?.toLowerCase();
+
   return !!perms?.[key]?.[action];
 }
 

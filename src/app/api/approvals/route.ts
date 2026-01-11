@@ -686,9 +686,21 @@ async function applyChange(change: any) {
                     break;
                 case 'MerchantUser':
                     if (changeType === 'CREATE') {
-                        // create a user with role 'merchant'
+                        // create a user (role can be 'merchant' or 'merchant-approver')
                         const info = payloadData || {};
-                        let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+
+                        // Determine desired role from payload (support legacy `roleName` or `role` keys)
+                        const desiredRoleName = (typeof info.roleName === 'string' && info.roleName.trim())
+                          ? info.roleName
+                          : (typeof info.role === 'string' && info.role.trim())
+                          ? info.role
+                          : 'merchant';
+
+                        let role = await prisma.role.findUnique({ where: { name: desiredRoleName } });
+                        if (!role) {
+                            // fall back to merchant if the desired role does not exist
+                            role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+                        }
                         if (!role) {
                             // ensure a merchant role exists to avoid hard failures during approvals
                             role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
@@ -940,22 +952,68 @@ async function applyChange(change: any) {
 
 
 export async function POST(req: NextRequest) {
-  const user = await getUserFromSession();
-  if (!user || !user.permissions?.['approvals']?.update) {
-      return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
-  }
+    const user = await getUserFromSession();
+    if (!user) return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+
+    // Default: require central approvals update permission
+    let allowedToProcess = !!user.permissions?.['approvals']?.update;
+
+    // Allow module-scoped approvals for merchant-related changes (e.g. `merchants-approvals`).
+    // Inspect pending change payload later to determine subtype when needed.
 
   try {
     const body = await req.json();
     const { changeId, approved, rejectionReason } = approvalSchema.parse(body);
 
-    const change = await prisma.pendingChange.findUnique({
+        const change = await prisma.pendingChange.findUnique({
       where: { id: changeId },
     });
 
-    if (!change) {
+        if (!change) {
       return NextResponse.json({ error: 'Change request not found.' }, { status: 404 });
     }
+
+        // If user didn't have central approvals permission, check module-scoped permissions
+        if (!allowedToProcess) {
+            try {
+                const payload = JSON.parse(change.payload || '{}');
+                const entity = change.entityType;
+
+                // Merchant module changes are represented as entityType 'Merchants' or Branch subtypes
+                if (entity === 'Merchants') {
+                    allowedToProcess = !!user.permissions?.['merchants-approvals']?.update;
+                } else if (entity === 'Branch') {
+                    const inner = payload.created || payload.updated || payload.original || {};
+                    const subtype = inner.type || (inner && typeof inner === 'string' ? inner : null);
+                    if (subtype && ['Merchant', 'ProductCategory', 'StockLocation', 'InventoryLevel', 'MerchantUser'].includes(subtype)) {
+                        allowedToProcess = !!user.permissions?.['merchants-approvals']?.update;
+                    }
+                }
+            } catch (e) {
+                // ignore parse errors and keep allowedToProcess as-is
+            }
+        }
+
+        if (!allowedToProcess) {
+            return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
+        }
+
+        // If allowed via module-scoped `merchants-approvals`, ensure the change is for the same merchant
+        if (!user.permissions?.['approvals']?.update) {
+            try {
+                const payload = JSON.parse(change.payload || '{}');
+                const entity = change.entityType;
+                const target = payload.created || payload.updated || payload.original || {};
+                const changeMerchantId = target.merchantId || target.providerId || null;
+                if (changeMerchantId && user.merchantId) {
+                    if (String(changeMerchantId) !== String(user.merchantId)) {
+                        return NextResponse.json({ error: 'Not authorized for this merchant' }, { status: 403 });
+                    }
+                }
+            } catch (e) {
+                // ignore parse errors
+            }
+        }
 
     if (change.createdById === user.id) {
       return NextResponse.json({ error: 'You cannot approve or reject your own changes.' }, { status: 403 });

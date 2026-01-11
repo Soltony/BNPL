@@ -234,6 +234,8 @@ export function ProtectedLayout({ children, providers }: ProtectedLayoutProps) {
             </DropdownMenu>
           </header>
           <main className="flex-1 overflow-x-auto">
+            
+
             {!isCurrentRouteAllowed ? (
               <div className="p-8">
                 <h1 className="text-2xl font-semibold">Unauthorized</h1>

@@ -7,15 +7,21 @@ export async function GET() {
   try {
     await requireBranchOrAdminFromRequest();
 
-    let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
-    if (!role) {
-      role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
+    // Ensure default merchant role exists
+    let merchantRole = await prisma.role.findUnique({ where: { name: 'merchant' } });
+    if (!merchantRole) {
+      merchantRole = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
     }
 
+    // Attempt to include an optional merchant approver role if present
+    const approverRole = await prisma.role.findUnique({ where: { name: 'merchant-approver' } });
+
+    const roleIds = approverRole ? [merchantRole.id, approverRole.id] : [merchantRole.id];
+
     const users = await prisma.user.findMany({
-      where: { roleId: role.id },
+      where: { roleId: { in: roleIds } },
       orderBy: { createdAt: 'desc' },
-      select: { id: true, fullName: true, email: true, phoneNumber: true, merchant: { select: { id: true, name: true } } },
+      select: { id: true, fullName: true, email: true, phoneNumber: true, merchant: { select: { id: true, name: true } }, role: { select: { name: true } } },
     });
 
     return NextResponse.json({ data: users });
@@ -30,16 +36,19 @@ export async function POST(req: NextRequest) {
     await requireBranchOrAdminFromRequest();
 
     const body = await req.json();
-    const { fullName, email, phone, password, merchantId } = body || {};
+    const { fullName, email, phone, password, merchantId, roleName } = body || {};
 
     if (!fullName || typeof fullName !== 'string') {
       return NextResponse.json({ error: 'fullName is required' }, { status: 400 });
     }
 
-    // Find merchant role by exact name (ensure a role named 'merchant' exists)
-    let role = await prisma.role.findUnique({ where: { name: 'merchant' } });
+    const allowedRoles = ['merchant', 'merchant-approver'];
+    const desiredRole = typeof roleName === 'string' && allowedRoles.includes(roleName) ? roleName : 'merchant';
+
+    // Find or create the desired role
+    let role = await prisma.role.findUnique({ where: { name: desiredRole } });
     if (!role) {
-      role = await prisma.role.create({ data: { name: 'merchant', permissions: JSON.stringify({}) } });
+      role = await prisma.role.create({ data: { name: desiredRole, permissions: JSON.stringify({}) } });
     }
 
     const nowSuffix = Date.now().toString().slice(-6);
@@ -68,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     const created = await prisma.user.create({
       data: dataToCreate,
-      select: { id: true, fullName: true, email: true, phoneNumber: true, merchantId: true },
+      select: { id: true, fullName: true, email: true, phoneNumber: true, merchantId: true, role: { select: { name: true } } },
     });
 
     return NextResponse.json({ data: created }, { status: 201 });

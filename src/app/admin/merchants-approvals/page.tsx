@@ -10,7 +10,7 @@ import type { User } from '@/lib/types';
 // Requests created from the /admin/merchants module (excluding Orders)
 const MERCHANT_ENTITY_TYPES = new Set(['Merchants']);
 
-async function getPendingChanges(): Promise<PendingChangeWithDetails[]> {
+async function getPendingChanges(userMerchantId?: string): Promise<PendingChangeWithDetails[]> {
   const changes = await prisma.pendingChange.findMany({
     where: {
       status: 'PENDING',
@@ -65,7 +65,20 @@ async function getPendingChanges(): Promise<PendingChangeWithDetails[]> {
     }
   };
 
-  return changes.map((change) => {
+  // If a userMerchantId is provided, filter to only changes for that merchant
+  const filtered = typeof userMerchantId === 'string' && userMerchantId ? changes.filter((change) => {
+    try {
+      const data = JSON.parse(change.payload || '{}');
+      const target = data.created || data.updated || data.original || {};
+      const mid = target.merchantId || target.providerId || null;
+      if (!mid) return false;
+      return String(mid) === String(userMerchantId);
+    } catch {
+      return false;
+    }
+  }) : changes;
+
+  return filtered.map((change) => {
     change.payload = sanitizePayloadForDisplay(change.entityType, change.payload);
 
     let entityName = change.entityId || 'N/A';
@@ -105,12 +118,13 @@ export default async function MerchantsApprovalsPage() {
     return <div>Not authenticated</div>;
   }
 
-  const pendingChanges = await getPendingChanges();
+  const pendingChanges = await getPendingChanges(user.merchantId as string | undefined);
 
   return (
     <ApprovalsClient
       pendingChanges={pendingChanges}
       currentUser={user as User}
+      requiredPermission="merchants-approvals"
       title="Merchant Pending Approvals"
       description="Review and approve or reject pending changes from the Merchants module."
     />

@@ -999,13 +999,17 @@ export function ApprovalsClient({
   currentUser,
   title,
   description,
+  requiredPermission,
 }: {
   pendingChanges: PendingChangeWithDetails[];
   currentUser: User;
   title?: string;
   description?: string;
+  requiredPermission?: string;
 }) {
-  useRequirePermission('approvals');
+  // Allow callers to request a specific module permission key (defaults to central 'approvals')
+  // This lets pages like Merchant-specific approvals require `merchants-approvals` instead.
+  useRequirePermission(requiredPermission ?? 'approvals');
   const [changes, setChanges] = useState(initialChanges);
   const [isLoading, setIsLoading] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);

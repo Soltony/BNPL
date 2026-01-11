@@ -82,6 +82,7 @@ export default function BranchPage() {
   const [newUserPhone, setNewUserPhone] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserMerchantId, setNewUserMerchantId] = useState<string>('');
+  const [newUserRole, setNewUserRole] = useState<'merchant' | 'merchant-approver'>('merchant');
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   const [locationDialogOpen, setLocationDialogOpen] = useState(false);
@@ -113,9 +114,11 @@ export default function BranchPage() {
     }
   };
 
+  const canApproveAny = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
+
   const createMerchantUser = async () => {
     try {
-      const payload = { fullName: newUserName, email: newUserEmail || null, phone: newUserPhone || null, password: newUserPassword || undefined, merchantId: newUserMerchantId || undefined };
+      const payload = { fullName: newUserName, email: newUserEmail || null, phone: newUserPhone || null, password: newUserPassword || undefined, merchantId: newUserMerchantId || undefined, roleName: newUserRole };
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         await postPendingChange({ entityType: 'Branch', changeType: 'CREATE', payload: JSON.stringify({ created: { type: 'MerchantUser', data: payload } }) }, 'Failed to submit merchant user for approval');
@@ -133,6 +136,7 @@ export default function BranchPage() {
       if (!res.ok) throw new Error(data?.error || 'Failed to create merchant user');
       toast({ title: 'Saved', description: 'Merchant user created.' });
       setNewUserName(''); setNewUserEmail(''); setNewUserPhone(''); setNewUserPassword(''); setNewUserMerchantId('');
+      setNewUserRole('merchant');
       await fetchMerchantUsers();
     } catch (err: any) {
       toast({ title: 'Error', description: err?.message || 'Failed to create', variant: 'destructive' });
@@ -592,6 +596,19 @@ export default function BranchPage() {
                       </div>
 
                       <div className="space-y-1">
+                        <div className="text-sm font-medium">Role</div>
+                        <Select value={newUserRole} onValueChange={(v) => setNewUserRole(v as any)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="merchant">Merchant</SelectItem>
+                            <SelectItem value="merchant-approver">Merchant Approver</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-1">
                         <div className="text-sm font-medium">Associate Merchant</div>
                         <Select value={newUserMerchantId} onValueChange={(v) => setNewUserMerchantId(v)}>
                           <SelectTrigger>
@@ -604,12 +621,15 @@ export default function BranchPage() {
                           </SelectContent>
                         </Select>
                       </div>
+                      {!canApproveAny && (
+                        <div className="text-sm text-muted-foreground">Users created here will be submitted for approval and won't appear until approved.</div>
+                      )}
                     </div>
                   </CardContent>
                   <CardFooter>
                     <div className="flex justify-end gap-2">
                       <Button variant="outline" onClick={() => { setNewUserName(''); setNewUserEmail(''); setNewUserPhone(''); setNewUserPassword(''); setNewUserMerchantId(''); }}>Cancel</Button>
-                      <Button onClick={createMerchantUser} disabled={!newUserName.trim() || !newUserMerchantId}>Create Merchant User</Button>
+                      <Button onClick={createMerchantUser} disabled={!newUserName.trim() || !newUserMerchantId}>{canApproveAny ? 'Create Merchant User' : 'Submit for Approval'}</Button>
                     </div>
                   </CardFooter>
                 </Card>
@@ -630,6 +650,7 @@ export default function BranchPage() {
                             <TableHead>Email</TableHead>
                             <TableHead>Phone</TableHead>
                                 <TableHead>Merchant</TableHead>
+                                <TableHead>Role</TableHead>
                                 <TableHead className="w-[160px]">Actions</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -640,6 +661,7 @@ export default function BranchPage() {
                               <TableCell>{u.email || '-'}</TableCell>
                                   <TableCell>{u.phoneNumber || '-'}</TableCell>
                                   <TableCell>{u.merchant?.name || '-'}</TableCell>
+                                  <TableCell>{(u as any).role?.name || 'merchant'}</TableCell>
                               <TableCell className="flex gap-2">
                                 <Button variant="destructive" onClick={() => deleteMerchantUser(u.id)}>Delete</Button>
                               </TableCell>
