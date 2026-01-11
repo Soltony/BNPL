@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { rotateSessionCookies } from '../../../lib/session';
+import { rotateSessionCookies } from '../../../../lib/session';
 
 export async function GET() {
   const payload = await rotateSessionCookies();

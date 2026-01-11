@@ -87,7 +87,7 @@ export async function requireServerPermission(moduleName?: string, action: Permi
 
   if (!moduleName) return;
 
-  const allowed = !!user.permissions?.[moduleName]?.[action];
+  const allowed = !!((user.permissions?.[moduleName] as Record<PermissionSet, boolean>)?.[action]);
   if (!allowed) {
     redirect('/admin/forbidden');
   }
