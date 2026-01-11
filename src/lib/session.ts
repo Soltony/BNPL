@@ -193,10 +193,11 @@ export async function getSession() {
 
       const accessExpires = expiryDateFromMinutes(15);
 
-      // set rotated refresh token and new access token as httpOnly cookies
-      const cookiesStore2 = await cookies();
-      cookiesStore2.set('accessToken', newAccessToken, { httpOnly: true, secure: isProd(), sameSite: 'lax', path: '/', expires: accessExpires });
-      cookiesStore2.set('refreshToken', newRefreshToken, { httpOnly: true, secure: isProd(), sameSite: 'lax', path: '/', expires: refreshExpiresAt });
+      // Return the access payload (caller may set cookies). During normal
+      // server-side rendering we must not write cookies here; a Route Handler
+      // or Server Action should perform the cookie writes. For convenience
+      // callers that run in such contexts can call `rotateSessionCookies`
+      // which performs the same rotation and sets the cookies.
 
       return accessPayload;
     } catch (e) {
@@ -227,6 +228,61 @@ export async function getSession() {
   }
 
   return null;
+}
+
+// Rotate refresh + access tokens and set httpOnly cookies. This function is
+// intended to be invoked from a Route Handler or Server Action where cookie
+// mutation is allowed by Next.js.
+export async function rotateSessionCookies() {
+  const cookiesStore = await cookies();
+  const refresh = cookiesStore.get('refreshToken')?.value;
+  if (!refresh) return null;
+
+  try {
+    const { default: prisma } = await import('./prisma');
+    const sessionRecord = await prisma.session.findUnique({ where: { refreshToken: refresh } });
+    if (!sessionRecord) return null;
+    if (sessionRecord.revoked) return null;
+    if (sessionRecord.expiresAt < new Date()) return null;
+
+    // rotate refresh token
+    const newRefreshToken = await encryptJwt({ userId: sessionRecord.userId, t: 'refresh' }, `${REFRESH_TOKEN_DAYS}d`);
+    const refreshExpiresAt = expiryDateFromDays(REFRESH_TOKEN_DAYS);
+
+    // fetch user role
+    const userWithRole = await prisma.user.findUnique({ where: { id: sessionRecord.userId }, include: { role: true } });
+    if (!userWithRole) return null;
+
+    const newJti = randomUUID();
+    await prisma.session.update({ where: { id: sessionRecord.id }, data: { refreshToken: newRefreshToken, expiresAt: refreshExpiresAt, lastActivity: new Date(), jti: newJti } });
+
+    const accessPayload: any = {
+      userId: sessionRecord.userId,
+      sessionId: sessionRecord.id,
+      jti: await (async () => {
+        try {
+          const { default: prisma2 } = await import('./prisma');
+          const updated = await prisma2.session.findUnique({ where: { id: sessionRecord.id } });
+          return updated?.jti;
+        } catch (e) {
+          return undefined;
+        }
+      })(),
+      passwordChangeRequired: userWithRole.passwordChangeRequired,
+    };
+
+    const newAccessToken = await encryptJwt(accessPayload, ACCESS_TOKEN_EXP);
+    const accessExpires = expiryDateFromMinutes(15);
+
+    // set rotated cookies (allowed in route handlers/server actions)
+    cookiesStore.set('accessToken', newAccessToken, { httpOnly: true, secure: isProd(), sameSite: 'lax', path: '/', expires: accessExpires });
+    cookiesStore.set('refreshToken', newRefreshToken, { httpOnly: true, secure: isProd(), sameSite: 'lax', path: '/', expires: refreshExpiresAt });
+
+    return accessPayload;
+  } catch (e) {
+    console.error('rotateSessionCookies failed:', e);
+    return null;
+  }
 }
 
 export async function deleteSession() {
