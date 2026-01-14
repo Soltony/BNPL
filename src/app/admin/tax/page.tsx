@@ -42,7 +42,14 @@ function TaxCard({ tax, onSave, onDelete }: { tax: TaxConfig; onSave: (tax: TaxC
     }, [tax]);
 
     const handleComponentChange = (componentId: string, checked: boolean) => {
-        const currentAppliedTo = JSON.parse(config.appliedTo);
+        const safeParseAppliedTo = (v: any) => {
+            try {
+                if (typeof v === 'string') return JSON.parse(v) ?? [];
+                if (Array.isArray(v)) return v;
+            } catch (_) { }
+            return [];
+        };
+        const currentAppliedTo = safeParseAppliedTo(config.appliedTo);
         const newAppliedTo = checked
             ? [...currentAppliedTo, componentId]
             : currentAppliedTo.filter((c: string) => c !== componentId);
@@ -125,7 +132,7 @@ function TaxCard({ tax, onSave, onDelete }: { tax: TaxConfig; onSave: (tax: TaxC
                             <div key={component.id} className="flex items-center space-x-2">
                                 <Checkbox
                                     id={`tax-on-${config.id}-${component.id}`}
-                                    checked={JSON.parse(config.appliedTo).includes(component.id)}
+                                    checked={((): boolean => { try { const v = config.appliedTo; if (typeof v === 'string') return JSON.parse(v || '[]').includes(component.id); if (Array.isArray(v)) return v.includes(component.id); return false; } catch { return false; } })()}
                                     onCheckedChange={(checked) => handleComponentChange(component.id, !!checked)}
                                     disabled={config.status === 'PENDING_APPROVAL'}
                                 />

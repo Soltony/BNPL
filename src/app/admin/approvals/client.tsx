@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check, X, Eye, ArrowRight, ChevronDown } from 'lucide-react';
+import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
@@ -404,6 +405,38 @@ const ChangeDetailsDialog = ({
   const [previewRows, setPreviewRows] = React.useState<any[] | null>(null);
   const [previewHeaders, setPreviewHeaders] = React.useState<string[] | null>(null);
   const [subEntityDetails, setSubEntityDetails] = React.useState<any[] | null>(null);
+  const [termsDialogOpen, setTermsDialogOpen] = React.useState(false);
+
+  const escapeHtml = (unsafe: string) => {
+    return unsafe
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  };
+
+  const openTermsInNewTab = (text: string | null) => {
+    if (!text) return;
+    const w = window.open('', '_blank');
+    if (!w) return;
+    const safe = escapeHtml(text);
+    w.document.write(`<!doctype html><html><head><title>Terms & Conditions</title><meta charset="utf-8" /></head><body style="font-family: system-ui, -apple-system, Roboto, 'Segoe UI', Roboto, Arial; padding:20px;"><pre style="white-space:pre-wrap;word-wrap:break-word;">${safe}</pre></body></html>`);
+    w.document.close();
+  };
+
+  const downloadTermsText = (text: string | null, filename = 'terms.txt') => {
+    if (!text) return;
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
 
   const openPreviewFromPayload = async () => {
     const fileContent = getFileContentFromPayload();
@@ -730,20 +763,49 @@ const ChangeDetailsDialog = ({
                 <CollapsibleContent>
                     <div className="border border-t-0 rounded-b-lg p-4 text-sm">
                         {isTermsChange && termsContent ? (
-                          <div className="space-y-6">
+                          <>
+                            <div className="space-y-6">
                             <div>
                               <p className="text-xs font-medium text-muted-foreground uppercase mb-2">Previous Content</p>
-                              <div className="border rounded-md p-4 text-sm max-h-64 overflow-auto whitespace-pre-wrap bg-muted/40">
+                              <div className={"border rounded-md p-4 text-sm " + (isTermsChange ? "overflow-auto whitespace-pre-wrap bg-muted/40" : "max-h-64 overflow-auto whitespace-pre-wrap bg-muted/40")}>
                                 {termsContent.original || <span className="text-muted-foreground">No prior terms.</span>}
                               </div>
                             </div>
                             <div>
                               <p className="text-xs font-medium text-muted-foreground uppercase mb-2">New Content</p>
-                              <div className="border rounded-md p-4 text-sm max-h-64 overflow-auto whitespace-pre-wrap bg-muted/20">
-                                {termsContent.updated || <span className="text-muted-foreground">No new content provided.</span>}
+                               <div className={"border rounded-md p-4 text-sm " + (isTermsChange ? "overflow-auto whitespace-pre-wrap bg-muted/20" : "max-h-64 overflow-auto whitespace-pre-wrap bg-muted/20")}>
+                                 {termsContent.updated || <span className="text-muted-foreground">No new content provided.</span>}
+                               </div>
+                            </div>
+                              <div className="flex gap-2 mt-2">
+                                <button type="button" onClick={() => setTermsDialogOpen(true)} className="px-3 py-2 rounded bg-primary text-white">View full terms</button>
+                                <button type="button" onClick={() => { navigator.clipboard?.writeText(termsContent.updated || ''); }} className="px-3 py-2 rounded border">Copy new text</button>
+                                <button type="button" onClick={() => openTermsInNewTab(termsContent.updated || termsContent.original)} className="px-3 py-2 rounded border">Open in new tab</button>
+                                <button type="button" onClick={() => downloadTermsText(termsContent.updated || termsContent.original, `terms-${change?.id || 'change'}.txt`)} className="px-3 py-2 rounded border">Download .txt</button>
                               </div>
                             </div>
-                          </div>
+                            <Dialog open={termsDialogOpen} onOpenChange={setTermsDialogOpen}>
+                              <DialogContent className="max-w-4xl h-[80vh]">
+                                <DialogHeader>
+                                  <DialogTitle>Terms & Conditions — Full View</DialogTitle>
+                                  <DialogDescription>Compare the full previous and new terms. Use this view to read long policies without truncation.</DialogDescription>
+                                </DialogHeader>
+                                <div className="grid grid-cols-2 gap-4 h-full mt-4">
+                                  <div className="border rounded p-4 overflow-auto bg-muted/40">
+                                    <h3 className="text-sm font-semibold mb-2">Previous</h3>
+                                    <pre className="whitespace-pre-wrap text-sm">{termsContent.original}</pre>
+                                  </div>
+                                  <div className="border rounded p-4 overflow-auto bg-muted/20">
+                                    <h3 className="text-sm font-semibold mb-2">New</h3>
+                                    <pre className="whitespace-pre-wrap text-sm">{termsContent.updated}</pre>
+                                  </div>
+                                </div>
+                                <DialogFooter className="mt-4">
+                                  <DialogClose asChild><button className="px-3 py-2 rounded border">Close</button></DialogClose>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                          </>
                         ) : (
                           <>
                             <div className="grid grid-cols-3 gap-x-4 mb-2 font-semibold">
@@ -1094,9 +1156,9 @@ export function ApprovalsClient({
                       <TableCell>{change.createdBy?.fullName || 'Unknown User'}</TableCell>
                       <TableCell>{formatDistanceToNow(new Date(change.createdAt), { addSuffix: true })}</TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setChangeToView(change)}>
-                            <Eye className="h-4 w-4" />
-                        </Button>
+                        <Link href={`/admin/approvals/${change.id}`} className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent/50" aria-label="View details">
+                          <Eye className="h-4 w-4" />
+                        </Link>
                         <Button
                           variant="outline"
                           size="sm"

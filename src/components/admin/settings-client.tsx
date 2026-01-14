@@ -2482,6 +2482,9 @@ function UploadDataViewerDialog({ upload, onClose }: {
             return (
                 <UIDialog open={!!upload} onOpenChange={onClose}>
                     <UIDialogContent className="max-w-4xl h-[90vh] flex items-center justify-center">
+                        <UIDialogHeader className="sr-only">
+                            <UIDialogTitle>Loading upload preview</UIDialogTitle>
+                        </UIDialogHeader>
                         <div>Loading preview...</div>
                     </UIDialogContent>
                 </UIDialog>
