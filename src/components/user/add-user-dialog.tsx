@@ -162,13 +162,21 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
     setFormData(prev => {
         const updatedState = { ...prev, [field]: value };
         
-        if (field === 'role') {
-            if (!isProviderSpecificRole) {
-                updatedState.providerId = null;
-            } else if (!prev.providerId && providers.length > 0) {
-                updatedState.providerId = providers[0].id;
-            }
+      if (field === 'role') {
+        if (!isProviderSpecificRole) {
+          updatedState.providerId = null;
+        } else if (!prev.providerId && providers.length > 0) {
+          updatedState.providerId = providers[0].id;
         }
+
+        // Clear district/branch when changing away from a branch-related role
+        const newRoleObj = roles.find(r => r.name === value);
+        const newIsBranch = Boolean(newRoleObj?.permissions?.['branches-approvals']?.update) || String(value).toLowerCase() === 'branch';
+        if (!newIsBranch) {
+          updatedState.districtId = null;
+          updatedState.branchId = null;
+        }
+      }
         
         return updatedState;
     });
@@ -218,7 +226,9 @@ export function AddUserDialog({ isOpen, onClose, onSave, user, roles, providers,
   };
   
   const isProviderRole = formData.role === 'Loan Provider' || formData.role === 'Loan Manager';
-  const isBranchRole = String(formData.role).toLowerCase() === 'branch';
+  // Best practice: determine branch-related roles by permissions rather than name
+  const selectedRoleObj = roles.find(r => r.name === formData.role);
+  const isBranchRole = Boolean(selectedRoleObj?.permissions?.['branches-approvals']?.update) || String(formData.role).toLowerCase() === 'branch';
 
   const [districts, setDistricts] = useState<Array<any>>([]);
 

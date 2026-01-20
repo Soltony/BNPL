@@ -121,7 +121,8 @@ export default function BranchPage() {
       const payload = { fullName: newUserName, email: newUserEmail || null, phone: newUserPhone || null, password: newUserPassword || undefined, merchantId: newUserMerchantId || undefined, roleName: newUserRole };
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', changeType: 'CREATE', payload: JSON.stringify({ created: { type: 'MerchantUser', data: payload } }) }, 'Failed to submit merchant user for approval');
+        const payloadWithBranch = { ...payload, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
+        await postPendingChange({ entityType: 'Branch', changeType: 'CREATE', payload: JSON.stringify({ created: { type: 'MerchantUser', data: payloadWithBranch } }) }, 'Failed to submit merchant user for approval');
         toast({ title: 'Submitted', description: 'Merchant user submitted for approval.' });
         setNewUserName(''); setNewUserEmail(''); setNewUserPhone(''); setNewUserPassword(''); setNewUserMerchantId('');
         return;
@@ -148,7 +149,7 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const user = merchantUsers.find(u => u.id === id);
-        const original = user ? { type: 'MerchantUser', data: user } : { type: 'MerchantUser', id };
+        const original = user ? { type: 'MerchantUser', data: { ...user, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id } } : { type: 'MerchantUser', id, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
         await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit merchant user removal for approval');
         toast({ title: 'Submitted', description: 'Merchant user removal submitted for approval.' });
         return;
@@ -249,7 +250,9 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const changeType = editingMerchant ? 'UPDATE' : 'CREATE';
-        await postPendingChange({ entityType: 'Branch', entityId: editingMerchant?.id, changeType, payload: JSON.stringify({ created: !editingMerchant ? { type: 'Merchant', data: body } : undefined, updated: editingMerchant ? { type: 'Merchant', data: body } : undefined }) }, 'Failed to submit merchant for approval');
+        // Ensure branch association is included so branch approvers can be scoped correctly
+        const payloadBody = { ...body, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
+        await postPendingChange({ entityType: 'Branch', entityId: editingMerchant?.id, changeType, payload: JSON.stringify({ created: !editingMerchant ? { type: 'Merchant', data: payloadBody } : undefined, updated: editingMerchant ? { type: 'Merchant', data: payloadBody } : undefined }) }, 'Failed to submit merchant for approval');
         toast({ title: 'Submitted', description: 'Merchant saved and submitted for approval.' });
         setMerchantDialogOpen(false);
         return;
@@ -277,7 +280,7 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const m = merchants.find(m => m.id === id);
-        const original = m ? { type: 'Merchant', data: m } : { type: 'Merchant', id };
+        const original = m ? { type: 'Merchant', data: { ...m, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id } } : { type: 'Merchant', id, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
         await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit merchant deletion for approval');
         toast({ title: 'Submitted', description: 'Merchant deletion submitted for approval.' });
         return;
@@ -316,7 +319,8 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const changeType = editingCategory ? 'UPDATE' : 'CREATE';
-        await postPendingChange({ entityType: 'Branch', entityId: editingCategory?.id, changeType, payload: JSON.stringify({ created: !editingCategory ? { type: 'ProductCategory', data: body } : undefined, updated: editingCategory ? { type: 'ProductCategory', data: body } : undefined }) }, 'Failed to submit category for approval');
+        const bodyWithBranch = { ...body, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
+        await postPendingChange({ entityType: 'Branch', entityId: editingCategory?.id, changeType, payload: JSON.stringify({ created: !editingCategory ? { type: 'ProductCategory', data: bodyWithBranch } : undefined, updated: editingCategory ? { type: 'ProductCategory', data: bodyWithBranch } : undefined }) }, 'Failed to submit category for approval');
         toast({ title: 'Submitted', description: 'Category saved and submitted for approval.' });
         setCategoryDialogOpen(false);
         return;
@@ -344,7 +348,7 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const c = categories.find(c => c.id === id);
-        const original = c ? { type: 'ProductCategory', data: c } : { type: 'ProductCategory', id };
+        const original = c ? { type: 'ProductCategory', data: { ...c, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id } } : { type: 'ProductCategory', id, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
         await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original }) }, 'Failed to submit category deletion for approval');
         toast({ title: 'Submitted', description: 'Category deletion submitted for approval.' });
         return;
@@ -391,7 +395,8 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const changeType = editingLocation ? 'UPDATE' : 'CREATE';
-        await postPendingChange({ entityType: 'Branch', entityId: editingLocation?.id, changeType, payload: JSON.stringify({ created: !editingLocation ? { type: 'StockLocation', data: payload } : undefined, updated: editingLocation ? { type: 'StockLocation', data: payload } : undefined }) }, 'Failed to submit stock location for approval');
+        const payloadWithBranch = { ...payload, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
+        await postPendingChange({ entityType: 'Branch', entityId: editingLocation?.id, changeType, payload: JSON.stringify({ created: !editingLocation ? { type: 'StockLocation', data: payloadWithBranch } : undefined, updated: editingLocation ? { type: 'StockLocation', data: payloadWithBranch } : undefined }) }, 'Failed to submit stock location for approval');
         toast({ title: 'Submitted', description: 'Stock location saved and submitted for approval.' });
         setLocationDialogOpen(false);
         return;
@@ -416,7 +421,7 @@ export default function BranchPage() {
     try {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'StockLocation', id } }) }, 'Failed to submit stock location deletion for approval');
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'StockLocation', id, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id } }) }, 'Failed to submit stock location deletion for approval');
         toast({ title: 'Submitted', description: 'Stock location deletion submitted for approval.' });
         return;
       }
@@ -476,7 +481,8 @@ export default function BranchPage() {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
         const changeType = editingInventory ? 'UPDATE' : 'CREATE';
-        await postPendingChange({ entityType: 'Branch', entityId: editingInventory?.id, changeType, payload: JSON.stringify({ created: !editingInventory ? { type: 'InventoryLevel', data: payload } : undefined, updated: editingInventory ? { type: 'InventoryLevel', data: payload } : undefined }) }, 'Failed to submit inventory change for approval');
+        const payloadWithBranchInv = { ...payload, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id };
+        await postPendingChange({ entityType: 'Branch', entityId: editingInventory?.id, changeType, payload: JSON.stringify({ created: !editingInventory ? { type: 'InventoryLevel', data: payloadWithBranchInv } : undefined, updated: editingInventory ? { type: 'InventoryLevel', data: payloadWithBranchInv } : undefined }) }, 'Failed to submit inventory change for approval');
         toast({ title: 'Submitted', description: 'Inventory change submitted for approval.' });
         setInventoryDialogOpen(false);
         return;
@@ -502,7 +508,7 @@ export default function BranchPage() {
     try {
       const canApprove = !!(currentUser?.permissions?.branch && (currentUser.permissions as any).branch.approve);
       if (!canApprove) {
-        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'InventoryLevel', id } }) }, 'Failed to submit inventory deletion for approval');
+        await postPendingChange({ entityType: 'Branch', entityId: id, changeType: 'DELETE', payload: JSON.stringify({ original: { type: 'InventoryLevel', id, branchId: (currentUser as any)?.branchId || (currentUser as any)?.branch?.id } }) }, 'Failed to submit inventory deletion for approval');
         toast({ title: 'Submitted', description: 'Inventory deletion submitted for approval.' });
         return;
       }

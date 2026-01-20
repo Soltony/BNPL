@@ -19,10 +19,12 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import type { PendingChangeWithDetails } from './page';
 import type { User, LoanProvider } from '@/lib/types';
+// @ts-ignore: missing type declarations for 'json-diff'
 import { diff as showDiff } from 'json-diff';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import ExcelJS from 'exceljs';
@@ -517,7 +519,8 @@ const ChangeDetailsDialog = ({
             // If merchant is an object, prefer its name for concise display
             let beforeVal = v;
             if (k.toLowerCase() === 'merchant' && v && typeof v === 'object') {
-              beforeVal = v.name ?? v.id ?? JSON.stringify(v);
+              // v is typed as object; narrow to any for property access
+              beforeVal = (v as any).name ?? (v as any).id ?? JSON.stringify(v);
             }
             return { field: label, before: beforeVal, type: 'removed' };
           });
@@ -1062,12 +1065,14 @@ export function ApprovalsClient({
   title,
   description,
   requiredPermission,
+  openDetailsInline,
 }: {
   pendingChanges: PendingChangeWithDetails[];
   currentUser: User;
   title?: string;
   description?: string;
   requiredPermission?: string;
+  openDetailsInline?: boolean;
 }) {
   // Allow callers to request a specific module permission key (defaults to central 'approvals')
   // This lets pages like Merchant-specific approvals require `merchants-approvals` instead.
@@ -1156,9 +1161,17 @@ export function ApprovalsClient({
                       <TableCell>{change.createdBy?.fullName || 'Unknown User'}</TableCell>
                       <TableCell>{formatDistanceToNow(new Date(change.createdAt), { addSuffix: true })}</TableCell>
                       <TableCell className="text-right space-x-2">
-                        <Link href={`/admin/approvals/${change.id}`} className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent/50" aria-label="View details">
-                          <Eye className="h-4 w-4" />
-                        </Link>
+                        {/** Show inline modal for details when requested by the caller (branch-specific pages) */}
+                        {/** Otherwise navigate to the standalone details page */}
+                        {openDetailsInline ? (
+                          <button onClick={() => setChangeToView(change)} className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent/50" aria-label="View details">
+                            <Eye className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <Link href={`/admin/approvals/${change.id}`} className="inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-accent/50" aria-label="View details">
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

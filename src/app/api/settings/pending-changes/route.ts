@@ -15,7 +15,7 @@ const changeSchema = z.object({
 });
 
 // sanitize payload before storing - remove large fileContent fields for product/provider changes
-function removeFileContent(obj: any) {
+function removeFileContent(obj: any): any {
   if (!obj || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(removeFileContent);
 
@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
         createdById: session.userId,
       },
     });
+    
     
     await createAuditLog({
         actorId: session.userId,

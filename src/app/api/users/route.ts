@@ -133,6 +133,21 @@ export async function POST(req: NextRequest) {
       throw new Error('Invalid role selected.');
     }
 
+    // Parse stored permissions (roles.permissions stored as JSON string)
+    let rolePerms: any = {};
+    try {
+      rolePerms = JSON.parse(role.permissions || '{}');
+    } catch (e) {
+      rolePerms = {};
+    }
+
+    // If the selected role grants branches-approvals, require district and branch to be selected
+    if (rolePerms['branches-approvals']?.update) {
+      if (!districtId || !branchId) {
+        return NextResponse.json({ error: 'District and Branch are required for branch-scoped roles.' }, { status: 400 });
+      }
+    }
+
     // Vertical Escalation Prevention
     if (user.role !== 'Super Admin' && (role.name === 'Super Admin' || role.name === 'Admin')) {
         return NextResponse.json({ error: 'You cannot create a user with a higher-privileged role.' }, { status: 403 });
@@ -230,6 +245,13 @@ export async function PUT(req: NextRequest) {
         const role = await prisma.role.findUnique({ where: { name: roleName }});
         if (!role) {
             throw new Error('Invalid role selected.');
+        }
+        let rolePerms: any = {};
+        try { rolePerms = JSON.parse(role.permissions || '{}'); } catch { rolePerms = {}; }
+        if (rolePerms['branches-approvals']?.update) {
+          if (!districtId || !branchId) {
+            return NextResponse.json({ error: 'District and Branch are required when assigning a branch-scoped role.' }, { status: 400 });
+          }
         }
         
         // Vertical Escalation Prevention

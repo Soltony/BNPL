@@ -653,9 +653,16 @@ async function applyChange(change: any) {
                     break;
                 case 'ProductCategory':
                     if (changeType === 'CREATE') {
-                        await prisma.productCategory.create({ data: payloadData });
+                        // Remove branch metadata which ProductCategory model doesn't accept
+                        const createData = { ...(payloadData || {}) };
+                        delete (createData as any).branchId;
+                        delete (createData as any).branch;
+                        await prisma.productCategory.create({ data: createData });
                     } else if (changeType === 'UPDATE') {
-                        await prisma.productCategory.update({ where: { id: entityId! }, data: payloadData });
+                        const updateData = { ...(payloadData || {}) };
+                        delete (updateData as any).branchId;
+                        delete (updateData as any).branch;
+                        await prisma.productCategory.update({ where: { id: entityId! }, data: updateData });
                     } else if (changeType === 'DELETE') {
                         await prisma.productCategory.delete({ where: { id: entityId! } });
                     }
@@ -981,12 +988,17 @@ export async function POST(req: NextRequest) {
 
                 // Merchant module changes are represented as entityType 'Merchants' or Branch subtypes
                 if (entity === 'Merchants') {
-                    allowedToProcess = !!user.permissions?.['merchants-approvals']?.update;
+                    allowedToProcess = !!user.permissions?.['merchants-approvals']?.update || user.role === 'merchants-approvals';
                 } else if (entity === 'Branch') {
                     const inner = payload.created || payload.updated || payload.original || {};
                     const subtype = inner.type || (inner && typeof inner === 'string' ? inner : null);
+                    // Branch wrappers can represent merchant-scoped sub-entities (keep merchants-approvals)
                     if (subtype && ['Merchant', 'ProductCategory', 'StockLocation', 'InventoryLevel', 'MerchantUser'].includes(subtype)) {
-                        allowedToProcess = !!user.permissions?.['merchants-approvals']?.update;
+                        // Allow either merchants-approvals OR branches-approvals to process merchant-scoped sub-entities
+                        allowedToProcess = !!user.permissions?.['merchants-approvals']?.update || user.role === 'merchants-approvals' || !!user.permissions?.['branches-approvals']?.update || user.role === 'branches-approvals';
+                    } else {
+                        // For branch-specific changes use branches-approvals permission
+                        allowedToProcess = !!user.permissions?.['branches-approvals']?.update || user.role === 'branches-approvals';
                     }
                 }
             } catch (e) {
@@ -995,6 +1007,20 @@ export async function POST(req: NextRequest) {
         }
 
         if (!allowedToProcess) {
+                // Attempt to provide more context: subtype (for Branch wrappers) and explicit permission flags
+                let subtype: string | null = null;
+                let hasApprovalsFlag = !!user.permissions?.['approvals']?.update;
+                let hasMerchantsFlag = !!user.permissions?.['merchants-approvals']?.update;
+                let hasBranchesFlag = !!user.permissions?.['branches-approvals']?.update;
+                try {
+                    const payload = JSON.parse(change.payload || '{}');
+                    const inner = payload.created || payload.updated || payload.original || {};
+                    subtype = inner.type || (inner && typeof inner === 'string' ? inner : null);
+                } catch (e) {
+                    // ignore
+                }
+
+                // permission check failed for user; debug logging removed
             return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
         }
 
@@ -1012,6 +1038,32 @@ export async function POST(req: NextRequest) {
                 }
             } catch (e) {
                 // ignore parse errors
+            }
+        }
+
+        // If the user is a branch-level approver, ensure the change targets their assigned branch.
+        // Simplified and robust check: compare entityId (when present) or payload.branchId to user's branchId.
+        const isBranchApprover = !!user.permissions?.['branches-approvals']?.update || user.role === 'branches-approvals';
+        if (isBranchApprover && user.branchId) {
+            try {
+                const payload = JSON.parse(change.payload || '{}');
+
+                const determineBranchFromChange = () => {
+                    // Prefer explicit entityId for Branch entity updates/deletes
+                    if (change.entityType === 'Branch' && change.entityId) return String(change.entityId);
+
+                    // Otherwise inspect payload (created/updated/original). Expect either { branchId } or { branch: { id } }
+                    const target = payload.created || payload.updated || payload.original || {};
+                    const candidate = target.data || target;
+                    return candidate?.branchId || candidate?.branch?.id || null;
+                };
+
+                const branchForChange = determineBranchFromChange();
+                if (!branchForChange || String(branchForChange) !== String(user.branchId)) {
+                    return NextResponse.json({ error: 'Not authorized for this branch' }, { status: 403 });
+                }
+            } catch (e) {
+                return NextResponse.json({ error: 'Not authorized' }, { status: 403 });
             }
         }
 
